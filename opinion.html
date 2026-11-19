@@ -82,9 +82,11 @@ function gracias() {
   const texto = "Prueba los alfajores de Vicencio 🖤🤍 Negro y blanco, artesanales. Pídelos aquí: " + PEDIDOS;
   if (n >= 4) {
     g.innerHTML = `<h1>¡Muchas gracias! 🤎</h1><div class="mut sm">Nos alegra que te hayan gustado. Si quieres ayudarnos, recomiéndanos con tus amigos y familia:</div>
+      <button class="btn" id="comp" hidden>📲 Compartir en mis redes</button>
       <a class="btn wa" target="_blank" rel="noopener" href="https://wa.me/?text=${encodeURIComponent(texto)}">💬 Recomendar por WhatsApp</a>
       <a class="btn out" target="_blank" rel="noopener" href="https://www.instagram.com/alfajores_vicencio/">Síguenos en Instagram @alfajores_vicencio</a>
       <button class="btn out" id="cp">Copiar link para compartir</button>`;
+    if (navigator.share) { $("#comp").hidden = false; $("#comp").onclick = () => navigator.share({ title: "Alfajores Vicencio", text: texto, url: PEDIDOS }).catch(() => {}); }
     $("#cp").onclick = () => { const ok = () => $("#cp").textContent = "Link copiado ✅";
       if (navigator.clipboard) navigator.clipboard.writeText(PEDIDOS).then(ok, () => {}); };
   } else {
