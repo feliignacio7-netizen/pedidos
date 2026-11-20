@@ -57,6 +57,8 @@ hr{border:0;border-top:1px solid var(--bor);margin:8px 0}
 [hidden]{display:none!important}
 .opc{display:flex;gap:10px;align-items:flex-start;border:1px solid var(--bor2);border-radius:12px;padding:12px;margin-top:8px;cursor:pointer}
 .opc.sel{border-color:var(--pri);box-shadow:0 0 0 1px var(--pri);background:#F6EDE6}
+.gratis{background:#E4EBDF;color:var(--ok);font-size:12px;font-weight:700;padding:3px 9px;border-radius:99px}
+.prog{height:6px;border-radius:99px;background:var(--hov);margin-top:8px;overflow:hidden}.prog i{display:block;height:100%;background:var(--pri)}
 .opc input{width:20px;height:20px;margin:2px 0 0;flex-shrink:0;accent-color:var(--pri-t);padding:0}
 select{width:100%;font:inherit;font-size:16px;color:var(--fg);background:var(--sup);border:1px solid var(--bor2);border-radius:6px;padding:15px 14px;outline:none;-webkit-appearance:none;appearance:none}
 </style>
@@ -83,7 +85,7 @@ const $ = (s) => document.querySelector(s);
 const peso = (n) => "$" + Math.round(n).toLocaleString("es-CL");
 const esc = (t) => String(t ?? "").replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const BANDERA = '<svg viewBox="0 0 90 60"><rect width="90" height="60" fill="#fff"/><rect y="30" width="90" height="30" fill="#D52B1E"/><rect width="30" height="30" fill="#0039A6"/><polygon points="15,5 17.5,11.6 24.5,11.9 19,16.3 20.9,23.1 15,19.2 9.1,23.1 11,16.3 5.5,11.9 12.5,11.6" fill="#fff"/></svg>';
-const NOMBRES = ["Elige", "Tus datos", "Pago y envío"];
+const NOMBRES = ["Carrito", "Envío", "Pago"];
 const st = { paso: 1, cat: null, cant: {}, entrega: "retiro", comuna: "", otra: "", direccion: "", ref: (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random().toString(36).slice(2)), enviando: false };
 
 function avisar(t) { const a = $("#aviso"); a.textContent = t; a.style.display = "block"; clearTimeout(avisar.t); avisar.t = setTimeout(() => a.style.display = "none", 3200); }
@@ -125,62 +127,82 @@ function indicador() {
 function dibujarPaso1() {
   const c = st.cat;
   $("#cuerpo").innerHTML = indicador() + `
-  <div class="card"><h2 class="tit">Paso 1 · Elige tus alfajores</h2><div class="mut xs">Toca + para sumar los que quieras.</div>
+  <div class="card"><h2 class="tit">Tu carrito</h2><div class="mut xs">Toca + para sumar los que quieras.</div>
     ${c.productos.map((p) => `<div class="fila prod"><div><div style="font-weight:500;font-size:16px">${/negro/i.test(p.nombre) ? "⚫" : "⚪"} ${esc(p.nombre)}</div><div class="mut sm">${peso(p.precio)} c/u</div></div>
       <div class="cant"><button data-id="${p.id}" data-d="-1" aria-label="Quitar">−</button><span class="num" id="n${p.id}">${st.cant[p.id] || 0}</span><button class="mas" data-id="${p.id}" data-d="1" aria-label="Sumar">+</button></div></div>`).join("")}
   </div>
   <div class="card sm" id="falta1" style="margin-top:12px;border-color:var(--pri);background:#F6EDE6" hidden></div>
-  ${c.entrega ? `<div class="card sm" style="margin-top:12px">🚚 ${esc(c.entrega)}</div>` : ""}
+  <div class="card sm" style="margin-top:12px"><div style="font-weight:600;font-size:16px;margin-bottom:6px">Opciones de entrega</div>
+    <div class="fila" style="align-items:flex-start"><span>🚇 Metro Escuela Militar<div class="mut xs">Con previa coordinación</div></span><span class="gratis">Gratis</span></div>
+    ${despachoActivo() ? `<div class="fila" style="align-items:flex-start;margin-top:10px"><span>🚗 Entrega en ${esc(listaComunas(c.despacho.comunas))}<div class="mut xs">${Number(c.despacho.minimo || 0) ? `Pedido mínimo para entrega gratis: ${peso(c.despacho.minimo)}` : "Con previa coordinación"}</div></span><b style="white-space:nowrap">${Number(c.despacho.costo || 0) ? peso(c.despacho.costo) : "Gratis"}</b></div>` : ""}</div>
   ${c.whatsapp ? `<a class="btn out" style="margin-top:12px" target="_blank" rel="noopener" href="https://wa.me/${waNum(c.whatsapp)}?text=${encodeURIComponent("Hola! Tengo una consulta sobre los alfajores.")}">💬 ¿Tienes alguna duda? Escríbenos</a>` : ""}`;
   document.querySelectorAll(".cant button").forEach((b) => b.onclick = () => { const id = b.dataset.id; st.cant[id] = Math.max(0, Math.min(100, (st.cant[id] || 0) + Number(b.dataset.d))); $("#n" + id).textContent = st.cant[id]; barra(); });
 }
 
+function listaComunas(c) { c = c || []; return c.length > 1 ? c.slice(0, -1).join(", ") + " y " + c[c.length - 1] : (c[0] || ""); }
+function resumenPaso2() {   // resumen del pedido como en un carrito: subtotal, envío y total
+  const el = $("#resumen"); if (!el) return;
+  const [t] = totales(), e = envioActual(), desp = st.entrega === "despacho" && despachoActivo();
+  el.innerHTML = lineasActuales().map((l) => `<div class="fila sm"><span>${l.cantidad} × ${esc(sabor(l.nombre))}</span><span>${peso(l.cantidad * l.precio)}</span></div>`).join("") +
+    `<hr><div class="fila sm"><span class="mut">Subtotal</span><span>${peso(t)}</span></div>
+     <div class="fila sm"><span class="mut">${desp ? "Entrega a domicilio" : "Entrega"}</span><span>${!desp ? "Gratis" : (e === null ? "por coordinar" : e ? peso(e) : "Gratis")}</span></div>
+     <hr><div class="fila"><span style="font-weight:600;font-size:16px">Total</span><span style="font-weight:700;font-size:20px">${peso(t + (e || 0))}</span></div>`;
+}
 function dibujarPaso2() {
-  const [t] = totales();
+  const r = st.cat.despacho || {}, act = despachoActivo();
   $("#cuerpo").innerHTML = indicador() + `
-  <div class="card"><h2 class="tit">Paso 2 · Tus datos y la entrega</h2>
-    <div class="mut sm">Tu pedido: ${esc(frase(lineasActuales()))} · ${peso(t)}</div>
+  <div class="card"><h2 class="tit">Contacto</h2>
     <label class="c" for="nombre">Tu nombre</label><input id="nombre" autocomplete="name" value="${esc(st.nombre || "")}">
     <label class="c" for="tel">Tu WhatsApp</label>
     <div class="tel"><div class="pref">${BANDERA}<span>+569</span></div><input id="tel" inputmode="numeric" pattern="[0-9]*" autocomplete="off" placeholder="1234 5678" value="${esc(st.tel || "")}"></div>
     <div class="xs mut" id="ayuda" style="margin-top:4px">Escribe solo los 8 números que siguen al +569</div>
     <input class="trampa" id="trampa" tabindex="-1" autocomplete="off" aria-hidden="true">
   </div>
-  ${despachoActivo() ? `<div class="card" style="margin-top:12px"><div style="font-weight:600;font-size:16px">¿Cómo lo recibes?</div>
-    <label class="opc ${st.entrega === "retiro" ? "sel" : ""}" id="o_retiro"><input type="radio" name="ent" value="retiro" ${st.entrega === "retiro" ? "checked" : ""}>
-      <div><div style="font-weight:500">🚇 Retiro</div><div class="mut sm">${esc(st.cat.entrega || "Coordinamos el lugar")}</div></div></label>
-    <label class="opc ${st.entrega === "despacho" ? "sel" : ""}" id="o_despacho"><input type="radio" name="ent" value="despacho" ${st.entrega === "despacho" ? "checked" : ""}>
-      <div><div style="font-weight:500">🚗 Despacho a domicilio</div><div class="mut sm">Con previa coordinación</div></div></label>
+  <div class="card" style="margin-top:12px"><h2 class="tit">Método de envío</h2>
+    <label class="opc ${st.entrega === "retiro" || !act ? "sel" : ""}" id="o_retiro"><input type="radio" name="ent" value="retiro" ${st.entrega === "retiro" || !act ? "checked" : ""}>
+      <div style="flex:1"><div class="fila"><b style="font-weight:600">🚇 Metro Escuela Militar</b><span class="gratis">Gratis</span></div>
+        <div class="mut sm">Entrega gratis en el metro, con previa coordinación</div></div></label>
+    ${act ? `<label class="opc ${st.entrega === "despacho" ? "sel" : ""}" id="o_despacho"><input type="radio" name="ent" value="despacho" ${st.entrega === "despacho" ? "checked" : ""}>
+      <div style="flex:1"><div class="fila"><b style="font-weight:600">🚗 Entrega a domicilio</b><span style="font-weight:600">${Number(r.costo || 0) ? peso(r.costo) : "Gratis"}</span></div>
+        <div class="mut sm">${esc(listaComunas(r.comunas))}${Number(r.minimo || 0) ? ` · <b>gratis desde ${peso(r.minimo)}</b>` : ""}</div></div></label>
     <div id="desp" ${st.entrega === "despacho" ? "" : "hidden"}>
       <label class="c" for="comuna">Comuna</label>
-      <select id="comuna"><option value="">Elige tu comuna</option>${(st.cat.despacho.comunas || []).map((x) => `<option ${st.comuna === x ? "selected" : ""}>${esc(x)}</option>`).join("")}<option value="${OTRA}" ${st.comuna === OTRA ? "selected" : ""}>Otra comuna</option></select>
+      <select id="comuna"><option value="">Elige tu comuna</option>${(r.comunas || []).map((x) => `<option ${st.comuna === x ? "selected" : ""}>${esc(x)}</option>`).join("")}<option value="${OTRA}" ${st.comuna === OTRA ? "selected" : ""}>Otra comuna</option></select>
       <input id="otra" placeholder="¿Cuál comuna?" style="margin-top:8px" value="${esc(st.otra)}" ${st.comuna === OTRA ? "" : "hidden"}>
       <label class="c" for="dir">Dirección</label><input id="dir" autocomplete="street-address" placeholder="Calle, número y depto" value="${esc(st.direccion)}">
-      <div class="sm" id="envtxt" style="margin-top:8px"></div>
-    </div></div>` : ""}
-  <div class="card" style="margin-top:12px"><div style="font-weight:600;font-size:16px">¿Cuándo te acomoda?</div>
+      <div id="meta" style="margin-top:12px"></div>
+    </div>` : ""}
+  </div>
+  <div class="card" style="margin-top:12px"><h2 class="tit">¿Cuándo te acomoda?</h2>
     <label class="c" for="hora">Día y hora de la entrega</label>
     <input id="hora" autocomplete="off" placeholder="Ej: mañana a las 18:30" value="${esc(st.hora || "")}">
     <label class="c" for="nota">Comentario (opcional)</label><textarea id="nota" rows="2" placeholder="Ej: prefiero juntarnos en otro lugar cercano">${esc(st.nota || "")}</textarea>
-  </div>`;
-  if (despachoActivo()) {
-    const info = () => {
-      const e = envioActual(), r = st.cat.despacho, t = $("#envtxt");
-      if (!st.comuna) t.textContent = "";
-      else if (e === null) t.textContent = "El costo del envío lo coordinamos por WhatsApp.";
-      else if (e === 0) t.textContent = "Envío sin costo.";
-      else t.innerHTML = `Envío ${peso(e)}. <b>Te faltan ${peso(faltaGratis())} para tu envío gratis.</b> <a href="#" id="sumar" style="color:var(--pri-t);font-weight:600">+ Agregar alfajores</a>`;
-      const a = $("#sumar"); if (a) a.onclick = (ev) => { ev.preventDefault(); irA(1); };
-      barra();
-    };
-    document.querySelectorAll('input[name="ent"]').forEach((r) => r.onchange = () => {
-      st.entrega = r.value; $("#desp").hidden = st.entrega !== "despacho";
+  </div>
+  <div class="card" style="margin-top:12px"><h2 class="tit" style="margin-bottom:6px">Resumen del pedido</h2><div id="resumen"></div>
+    <a href="#" id="editar" class="sm" style="color:var(--pri-t);font-weight:600;display:inline-block;margin-top:8px">← Cambiar mis alfajores</a></div>`;
+  $("#editar").onclick = (ev) => { ev.preventDefault(); irA(1); };
+  const info = () => {
+    if (act) {
+      const e = envioActual(), m = $("#meta"), min = Number(r.minimo || 0), sub = totales()[0];
+      if (m) {
+        if (!st.comuna || e === null || !min || !Number(r.costo || 0)) m.innerHTML = e === null ? `<div class="sm mut">El costo del envío lo coordinamos por WhatsApp.</div>` : "";
+        else if (sub >= min) m.innerHTML = `<div class="sm" style="color:var(--ok);font-weight:600">🎉 ¡Tu entrega a ${esc(st.comuna)} es gratis!</div>`;
+        else m.innerHTML = `<div class="sm">Pedido mínimo para entrega gratis: <b>${peso(min)}</b>. Te faltan <b>${peso(min - sub)}</b>. <a href="#" id="sumar" style="color:var(--pri-t);font-weight:600">+ Agregar alfajores</a></div>
+          <div class="prog"><i style="width:${Math.min(100, Math.round(sub * 100 / min))}%"></i></div>`;
+        const a = $("#sumar"); if (a) a.onclick = (ev) => { ev.preventDefault(); irA(1); };
+      }
+    }
+    resumenPaso2(); barra();
+  };
+  if (act) {
+    document.querySelectorAll('input[name="ent"]').forEach((x) => x.onchange = () => {
+      st.entrega = x.value; $("#desp").hidden = st.entrega !== "despacho";
       $("#o_retiro").classList.toggle("sel", st.entrega === "retiro"); $("#o_despacho").classList.toggle("sel", st.entrega === "despacho"); info(); });
     $("#comuna").onchange = (e) => { st.comuna = e.target.value; $("#otra").hidden = st.comuna !== OTRA; info(); };
     $("#otra").oninput = (e) => st.otra = e.target.value;
     $("#dir").oninput = (e) => st.direccion = e.target.value;
-    info();
   }
+  info();
   const tel = $("#tel");
   function limpiar(v) { let d = String(v).replace(/\D/g, ""); if (d.length > 8) { d = d.replace(/^0+/, ""); if (d.length > 8 && d.startsWith("56")) d = d.slice(2); if (d.length > 8 && d.startsWith("9")) d = d.slice(1); } return d.slice(0, 8); }
   function ayuda() { const f = 8 - tel.value.length, a = $("#ayuda");
@@ -210,7 +232,7 @@ function dibujarPaso3(ped, pago) {
   const envio = Number(ped.envio || 0), coordinar = desp && st.comuna === OTRA;
   const texto = `Hola! Hice un pedido de ${frase(ped.lineas)} por ${peso(ped.total)}${desp ? ` con despacho a ${comuna}` : ""}. Adjunto el comprobante de transferencia.`;
   $("#cuerpo").innerHTML = indicador() + `
-  <div class="card"><h2 class="tit">Paso 3 · Paga y envíanos el comprobante</h2><div class="mut sm">¡Gracias! Tu pedido quedó anotado. Solo faltan 3 cosas:</div></div>
+  <div class="card"><h2 class="tit">Pago</h2><div class="mut sm">¡Gracias! Tu pedido quedó anotado. Solo faltan 3 cosas:</div></div>
   <div class="card" style="margin-top:12px"><div style="font-weight:600;font-size:16px;margin-bottom:6px">Resumen de tu pedido</div>
     ${ped.lineas.map((l) => `<div class="fila sm"><span>${l.cantidad} × ${esc(l.nombre)}</span><span>${peso(l.cantidad * l.precio)}</span></div>`).join("")}
     ${desp ? `<div class="fila sm"><span>🚗 Envío a ${esc(comuna)}</span><span>${coordinar ? "por coordinar" : envio ? peso(envio) : "sin costo"}</span></div>` : ""}
@@ -222,7 +244,8 @@ function dibujarPaso3(ped, pago) {
     ${c.whatsapp ? `<div class="mut sm" style="margin:6px 0 10px">Mándalo por WhatsApp para que sepamos que ya pagaste.</div><a class="btn wa" target="_blank" rel="noopener" href="https://wa.me/${waNum(c.whatsapp)}?text=${encodeURIComponent(texto)}">💬 Enviar comprobante por WhatsApp</a>` : `<div class="mut sm" style="margin-top:6px">Escríbenos por Instagram @alfajores_vicencio con el comprobante.</div>`}</div>
   <div class="card" style="margin-top:12px"><div class="fila" style="justify-content:flex-start"><span class="mini">3</span><b style="font-size:16px">Coordinamos la entrega</b></div>
     ${desp ? `<div class="sm" style="margin-top:6px">🚗 Despacho a ${esc(dir)}, ${esc(comuna)}</div><div class="mut xs">Te escribimos para coordinar el día y la hora.${coordinar ? " El costo del envío lo vemos por WhatsApp." : ""}</div>`
-           : `<div class="sm" style="margin-top:6px">${esc(c.entrega)}</div><div class="mut xs">Te escribimos para confirmar el lugar y la hora.</div>`}</div>
+           : `<div class="sm" style="margin-top:6px">🚇 Metro Escuela Militar</div><div class="mut xs">Te escribimos para confirmar el lugar y la hora.</div>`}
+    ${st.hora ? `<div class="mut xs" style="margin-top:4px">🕐 Tú indicaste: ${esc(st.hora)}</div>` : ""}</div>
   ${c.whatsapp ? `<a class="btn out" style="margin-top:12px" target="_blank" rel="noopener" href="https://wa.me/${waNum(c.whatsapp)}?text=${encodeURIComponent("Hola! Tengo una consulta sobre mi pedido de " + frase(ped.lineas) + ".")}">💬 Tengo una consulta</a>` : ""}
   <p class="mut sm" style="text-align:center">Puedes cerrar esta página. ¡Gracias por apoyar a Alfajores Vicencio! 🤎</p>`;
   const b = $("#cptodo"); if (b) b.onclick = () => copiar(filas.map((f) => f[1]).join("\n"), "Datos copiados ✅ Pégalos en tu app del banco");
@@ -241,7 +264,7 @@ function barra() {
     f1.innerHTML = f > 0 ? `🚗 Te faltan <b>${peso(f)}</b> para tu envío gratis a ${esc(st.comuna)}.` : `🚗 ¡Listo! Tu envío a ${esc(st.comuna)} es gratis.`;
   }
   $("#atras").hidden = st.paso !== 2;
-  $("#sig").textContent = st.paso === 1 ? "Continuar →" : (st.enviando ? "Enviando…" : "Confirmar pedido");
+  $("#sig").textContent = st.paso === 1 ? "Continuar al envío →" : (st.enviando ? "Enviando…" : "Ir a pagar →");
   $("#sig").disabled = (st.paso === 1 && u <= 0) || st.enviando;
 }
 
