@@ -210,11 +210,14 @@ function dibujarPaso3(ped, pago) {
   const desp = (ped.entrega || st.entrega) === "despacho";
   const comuna = ped.comuna || comunaElegida(), dir = ped.direccion || st.direccion;
   const envio = Number(ped.envio || 0), coordinar = false;
-  const texto = ["Hola, soy " + (st.nombre || "").trim() + ". Acabo de hacer un pedido en *Alfajores Vicencio*.", "",
-    "*Pedido:* " + frase(ped.lineas),
-    desp ? `*Entrega:* a domicilio en ${comuna}${dir ? " (" + dir + ")" : ""}` : "*Entrega:* metro Escuela Militar",
-    "*Total:* " + peso(ped.total) + (desp && envio ? " (incluye envío)" : ""), "",
-    "Te adjunto el comprobante de transferencia. ¡Muchas gracias!"].join("\n");
+  // Los emojis se ven bien en WhatsApp del celular; WhatsApp de escritorio (Windows) los muestra como "�", así que ahí van sin emojis.
+  const movil = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent), e = (x) => movil ? x + " " : "";
+  const nom = (st.nombre || "").trim().split(/\s+/).map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(" ");
+  const texto = [`Hola${movil ? " 👋" : ""}, soy ${nom}`,
+    e("🛒") + frase(ped.lineas),
+    desp ? e("🚗") + `${comuna}${dir ? " · " + dir : ""}` : e("🚇") + "Metro Escuela Militar",
+    e("💰") + "Total " + peso(ped.total) + (desp && envio ? " (con envío)" : ""),
+    e("🧾") + "Te envío mi comprobante" + (movil ? " 🙏" : ". ¡Gracias!")].join("\n");
   $("#cuerpo").innerHTML = indicador() + `
   <div class="card"><h2 class="tit">Pago</h2><div class="mut sm">¡Gracias! Tu pedido quedó anotado. Solo faltan 3 cosas:</div></div>
   <div class="card" style="margin-top:12px"><div style="font-weight:600;font-size:16px;margin-bottom:6px">Resumen de tu pedido</div>
