@@ -162,9 +162,7 @@ function dibujarPaso2() {
       <div id="meta" style="margin-top:12px"></div>
     </div>` : ""}
   </div>
-  <div class="card" style="margin-top:12px"><h2 class="tit" style="margin-bottom:6px">Resumen del pedido</h2><div id="resumen"></div>
-    <a href="#" id="editar" class="sm" style="color:var(--pri-t);font-weight:600;display:inline-block;margin-top:8px">← Cambiar mis alfajores</a></div>`;
-  $("#editar").onclick = (ev) => { ev.preventDefault(); irA(1); };
+  <div class="card" style="margin-top:12px"><h2 class="tit" style="margin-bottom:6px">Resumen del pedido</h2><div id="resumen"></div></div>`;
   const info = () => {
     if (act) {
       const e = envioActual(), m = $("#meta"), min = Number(r.minimo || 0), sub = totales()[0];
