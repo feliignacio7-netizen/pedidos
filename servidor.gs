@@ -8,6 +8,9 @@ const HOJA = "Pedidos";
 const COLUMNAS = ["ref", "creado", "nombre", "telefono", "nota", "lineas", "total", "importado", "entrega", "comuna", "direccion", "envio", "correo"];
 const HOJA_OP = "Opiniones";
 const COL_OP = ["ref", "creado", "estrellas", "comentario", "importado"];
+const HOJA_COMP = "Comprobantes";
+const COL_COMP = ["ref", "creado", "mime", "importado"];   // desde la columna 5: la imagen del comprobante, en trozos de texto (una celda aguanta 50.000 caracteres)
+const TROZO = 45000, MAX_TROZOS = 10;
 
 function json(o) {
   return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON);
@@ -46,6 +49,7 @@ function doPost(e) {
   try { d = JSON.parse(e.postData.contents); } catch (err) { return json({ ok: false, error: "Solicitud inválida." }); }
   if (d.accion === "pedido") return crearPedido(d);
   if (d.accion === "opinion") return guardarOpinion(d);
+  if (d.accion === "comprobante") return guardarComprobante(d);
   if (d.token !== TOKEN) return json({ ok: false, error: "No autorizado." });
   if (d.accion === "publicar") {
     PropertiesService.getScriptProperties().setProperty("cfg", JSON.stringify(d.cfg || {}));
@@ -55,6 +59,8 @@ function doPost(e) {
   if (d.accion === "marcar") return marcar(d.refs || []);
   if (d.accion === "opiniones") return opinionesPendientes();
   if (d.accion === "marcar_opiniones") return marcarOpiniones(d.refs || []);
+  if (d.accion === "comprobantes") return comprobantesPendientes();
+  if (d.accion === "marcar_comprobantes") return marcarComprobantes(d.refs || []);
   return json({ ok: false, error: "Acción desconocida." });
 }
 
@@ -198,5 +204,84 @@ function marcarOpiniones(refs) {
   const set = {}; refs.forEach(r => set[r] = true);
   const ahora = Utilities.formatDate(new Date(), "America/Santiago", "yyyy-MM-dd HH:mm");
   for (let i = 1; i < filas.length; i++) if (set[String(filas[i][0])]) h.getRange(i + 1, 5).setValue(ahora);
+  return json({ ok: true });
+}
+
+// ---------- Comprobantes de transferencia (el cliente los adjunta en la página después de pagar) ----------
+// La foto llega reducida desde el navegador. Se guarda en una hoja aparte y el ERP la baja a tu PC y la borra de la nube.
+function hojaComp() {
+  const libro = SpreadsheetApp.getActiveSpreadsheet();
+  let h = libro.getSheetByName(HOJA_COMP);
+  if (!h) { h = libro.insertSheet(HOJA_COMP); h.appendRow(COL_COMP); h.setFrozenRows(1); }
+  return h;
+}
+
+function guardarComprobante(d) {
+  if (d.trampa) return json({ ok: true });
+  const lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    const ref = String(d.ref || "").replace(/[^a-zA-Z0-9-]/g, "").substring(0, 40);
+    if (ref.length < 8) return json({ ok: false, error: "Solicitud inválida." });
+    const mime = String(d.mime || "").toLowerCase();
+    if (["image/jpeg", "image/png", "image/webp"].indexOf(mime) < 0) return json({ ok: false, error: "Sube una foto o captura del comprobante (JPG o PNG)." });
+    const datos = String(d.datos || "").replace(/\s+/g, "");
+    if (datos.length < 200 || !/^[A-Za-z0-9+\/]+={0,2}$/.test(datos)) return json({ ok: false, error: "No pude leer esa imagen. Prueba con otra o envíala por WhatsApp." });
+    if (datos.length > TROZO * MAX_TROZOS) return json({ ok: false, error: "La imagen es muy pesada. Prueba con una captura de pantalla o envíala por WhatsApp." });
+    const pedidos = hoja().getDataRange().getValues();
+    let existe = false;
+    for (let i = 1; i < pedidos.length; i++) if (String(pedidos[i][0]) === ref) { existe = true; break; }
+    if (!existe) return json({ ok: false, error: "No encontramos tu pedido." });   // solo adjuntan clientes reales
+    const cache = CacheService.getScriptCache();
+    const kRef = "c" + ref, kHora = "cg" + Utilities.formatDate(new Date(), "UTC", "yyyyMMddHH");
+    const nRef = Number(cache.get(kRef) || 0), nHora = Number(cache.get(kHora) || 0);
+    if (nRef >= 6 || nHora >= 80) return json({ ok: false, error: "Ya recibimos varios envíos. Escríbenos por WhatsApp con tu comprobante." });
+    const trozos = [];
+    for (let i = 0; i < MAX_TROZOS; i++) trozos.push(i * TROZO < datos.length ? "'" + datos.substring(i * TROZO, (i + 1) * TROZO) : "");
+    const creado = Utilities.formatDate(new Date(), "America/Santiago", "yyyy-MM-dd HH:mm");
+    const fila = [ref, "'" + creado, mime, ""].concat(trozos);
+    const h = hojaComp();
+    const filas = h.getDataRange().getValues();
+    let hecho = false;
+    for (let i = 1; i < filas.length; i++) {
+      if (String(filas[i][0]) === ref) {   // si lo vuelve a enviar, reemplaza al anterior y se vuelve a avisar
+        h.getRange(i + 1, 1, 1, fila.length).setValues([fila]);
+        hecho = true; break;
+      }
+    }
+    if (!hecho) h.appendRow(fila);
+    cache.put(kRef, String(nRef + 1), 3600); cache.put(kHora, String(nHora + 1), 3600);
+    return json({ ok: true });
+  } catch (err) {
+    return json({ ok: false, error: String(err.message || err) });
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function comprobantesPendientes() {
+  const filas = hojaComp().getDataRange().getValues();
+  const salida = [];
+  for (let i = 1; i < filas.length && salida.length < 3; i++) {   // de a 3, para que la respuesta no sea gigante
+    if (String(filas[i][3]).trim() !== "") continue;
+    const datos = filas[i].slice(4).map(String).join("");
+    if (!datos) continue;
+    salida.push({ ref: String(filas[i][0]), creado: String(filas[i][1]), mime: String(filas[i][2]), datos: datos });
+  }
+  return json({ ok: true, comprobantes: salida });
+}
+
+function marcarComprobantes(refs) {
+  const h = hojaComp();
+  const filas = h.getDataRange().getValues();
+  const set = {}; refs.forEach(r => set[r] = true);
+  const ahora = Utilities.formatDate(new Date(), "America/Santiago", "yyyy-MM-dd HH:mm");
+  const vacio = []; for (let i = 0; i < MAX_TROZOS; i++) vacio.push("");
+  for (let i = 1; i < filas.length; i++) {
+    if (set[String(filas[i][0])]) {
+      h.getRange(i + 1, 4).setValue(ahora);                         // recibido por el ERP
+      h.getRange(i + 1, 5, 1, MAX_TROZOS).setValues([vacio]);      // y se borra la imagen de la nube
+    }
+  }
   return json({ ok: true });
 }
