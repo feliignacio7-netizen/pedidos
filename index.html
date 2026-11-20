@@ -215,11 +215,11 @@ function dibujarPaso3(ped, pago) {
   const desp = (ped.entrega || st.entrega) === "despacho";
   const comuna = ped.comuna || comunaElegida(), dir = ped.direccion || st.direccion;
   const envio = Number(ped.envio || 0), coordinar = false;
-  const texto = ["¡Hola! 👋 Soy " + (st.nombre || "").trim() + " y acabo de hacer un pedido en *Alfajores Vicencio* 🤎", "",
-    "🛍️ *Pedido:* " + frase(ped.lineas),
-    desp ? `🚗 *Entrega:* a domicilio en ${comuna}${dir ? " (" + dir + ")" : ""}` : "🚇 *Entrega:* metro Escuela Militar",
-    "💰 *Total:* " + peso(ped.total) + (desp && envio ? " (incluye envío)" : ""), "",
-    "🧾 Te adjunto el comprobante de transferencia. ¡Muchas gracias! 🙏✨"].join("\n");
+  const texto = ["Hola, soy " + (st.nombre || "").trim() + ". Acabo de hacer un pedido en *Alfajores Vicencio*.", "",
+    "*Pedido:* " + frase(ped.lineas),
+    desp ? `*Entrega:* a domicilio en ${comuna}${dir ? " (" + dir + ")" : ""}` : "*Entrega:* metro Escuela Militar",
+    "*Total:* " + peso(ped.total) + (desp && envio ? " (incluye envío)" : ""), "",
+    "Te adjunto el comprobante de transferencia. ¡Muchas gracias!"].join("\n");
   $("#cuerpo").innerHTML = indicador() + `
   <div class="card"><h2 class="tit">Pago</h2><div class="mut sm">¡Gracias! Tu pedido quedó anotado. Solo faltan 3 cosas:</div></div>
   <div class="card" style="margin-top:12px"><div style="font-weight:600;font-size:16px;margin-bottom:6px">Resumen de tu pedido</div>
@@ -230,17 +230,12 @@ function dibujarPaso3(ped, pago) {
     ${filas.length ? `<button class="btn cp" id="cptodo">Copiar todos los datos</button>` + filas.map((f, i) => `<div class="dato"><div><div class="mut xs">${f[0]}</div><b>${esc(f[1])}</b></div></div>`).join("") : `<div class="mut sm" style="margin-top:6px">Te enviaremos los datos de transferencia por WhatsApp.</div>`}
     <div class="mut xs" style="padding-top:8px">Tu pedido queda <b>reservado por 2 horas</b>. Se confirma cuando recibimos la transferencia; si no la recibimos en ese plazo, lo liberamos.</div></div>
   <div class="card" style="margin-top:12px"><div class="fila" style="justify-content:flex-start"><span class="mini">2</span><b style="font-size:16px">Envíanos el comprobante</b></div>
-    ${c.whatsapp ? `<div class="mut sm" style="margin:6px 0 10px">Mándalo por WhatsApp para que sepamos que ya pagaste. Si quieres contarnos algo, escríbelo aquí y va en el mismo mensaje.</div>
-      <label class="c" for="coment" style="margin-top:0">Comentarios (opcional)</label>
-      <textarea id="coment" rows="2" maxlength="300" placeholder="Ej: prefiero en la tarde, o dónde nos juntamos"></textarea>
-      <a class="btn wa" id="wacomp" style="margin-top:10px" target="_blank" rel="noopener" href="https://wa.me/${waNum(c.whatsapp)}?text=${encodeURIComponent(texto)}">💬 Enviar comprobante por WhatsApp</a>` : `<div class="mut sm" style="margin-top:6px">Escríbenos por Instagram @alfajores_vicencio con el comprobante.</div>`}</div>
+    ${c.whatsapp ? `<a class="btn wa" id="wacomp" style="margin-top:12px;height:auto;min-height:52px;padding:12px 16px;text-align:center;line-height:1.25" target="_blank" rel="noopener" href="https://wa.me/${waNum(c.whatsapp)}?text=${encodeURIComponent(texto)}">💬 Envía un resumen de tu pedido y adjunta el comprobante</a>` : `<div class="mut sm" style="margin-top:6px">Escríbenos por Instagram @alfajores_vicencio con el comprobante.</div>`}</div>
   <div class="card" style="margin-top:12px"><div class="fila" style="justify-content:flex-start"><span class="mini">3</span><b style="font-size:16px">Coordinamos la entrega</b></div>
     ${desp ? `<div class="sm" style="margin-top:6px">🚗 A domicilio: ${esc(dir)}, ${esc(comuna)}</div>` : `<div class="sm" style="margin-top:6px">🚇 Metro Escuela Militar</div>`}
     <div class="mut sm" style="margin-top:4px">Apenas recibamos tu comprobante, <b>te escribimos por WhatsApp</b> para coordinar el día y la hora de la entrega.</div></div>
   ${c.whatsapp ? `<a class="btn out" style="margin-top:12px" target="_blank" rel="noopener" href="https://wa.me/${waNum(c.whatsapp)}?text=${encodeURIComponent("Hola! Tengo una consulta sobre mi pedido de " + frase(ped.lineas) + ".")}">💬 Tengo una consulta</a>` : ""}
   <p class="mut sm" style="text-align:center">Puedes cerrar esta página. ¡Gracias por apoyar a Alfajores Vicencio! 🤎</p>`;
-  const com = $("#coment"), wa = $("#wacomp");
-  if (com && wa) com.oninput = () => { const x = com.value.trim(); wa.href = `https://wa.me/${waNum(c.whatsapp)}?text=${encodeURIComponent(texto + (x ? "\n\nComentarios: " + x : ""))}`; };
   const b = $("#cptodo"); if (b) b.onclick = () => copiar(filas.map((f) => f[1]).join("\n"), "Datos copiados ✅ Pégalos en tu app del banco");
 }
 
