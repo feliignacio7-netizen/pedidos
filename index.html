@@ -259,9 +259,11 @@ function barra() {
   $("#barra").hidden = st.paso === 3;
   const f1 = $("#falta1");
   if (f1 && st.paso === 1) {
-    const f = faltaGratis(), fue = st.entrega === "despacho" && despachoActivo() && (st.cat.despacho.comunas || []).indexOf(st.comuna) >= 0;
-    f1.hidden = !fue;
-    f1.innerHTML = f > 0 ? `🚗 Te faltan <b>${peso(f)}</b> para tu envío gratis a ${esc(st.comuna)}.` : `🚗 ¡Listo! Tu envío a ${esc(st.comuna)} es gratis.`;
+    const r = st.cat.despacho || {}, min = Number(r.minimo || 0), falta = Math.max(0, min - t);
+    f1.hidden = !(despachoActivo() && min > 0 && Number(r.costo || 0) > 0);
+    f1.innerHTML = t <= 0 ? `🚗 Entrega a domicilio <b>gratis</b> desde ${peso(min)}`
+      : falta > 0 ? `🚗 Te faltan <b>${peso(falta)}</b> para el envío gratis a domicilio` : `🎉 ¡Tienes <b>envío gratis</b> a domicilio!`;
+    f1.innerHTML += `<div class="prog"><i style="width:${Math.min(100, Math.round(t * 100 / (min || 1)))}%"></i></div>`;
   }
   $("#atras").hidden = st.paso !== 2;
   $("#sig").textContent = st.paso === 1 ? "Continuar al envío →" : (st.enviando ? "Enviando…" : "Ir a pagar →");
