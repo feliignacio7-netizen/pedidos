@@ -146,6 +146,8 @@ function dibujarPaso2() {
     <label class="c" for="tel">Tu WhatsApp</label>
     <div class="tel"><div class="pref">${BANDERA}<span>+569</span></div><input id="tel" inputmode="numeric" pattern="[0-9]*" autocomplete="off" placeholder="1234 5678" value="${esc(st.tel || "")}"></div>
     <div class="xs mut" id="ayuda" style="margin-top:4px">Escribe solo los 8 números que siguen al +569</div>
+    <label class="c" for="correo">Tu correo</label><input id="correo" type="email" inputmode="email" autocomplete="email" placeholder="nombre@gmail.com" value="${esc(st.correo || "")}">
+    <div class="xs mut" style="margin-top:4px">Por si no logramos contactarte por WhatsApp. No enviamos publicidad.</div>
     <input class="trampa" id="trampa" tabindex="-1" autocomplete="off" aria-hidden="true">
   </div>
   <div class="card" style="margin-top:12px"><h2 class="tit">Método de envío</h2>
@@ -193,6 +195,7 @@ function dibujarPaso2() {
   tel.addEventListener("input", () => { tel.value = limpiar(tel.value); st.tel = tel.value; ayuda(); });
   tel.addEventListener("paste", (e) => { e.preventDefault(); tel.value = limpiar((e.clipboardData || window.clipboardData).getData("text")); st.tel = tel.value; ayuda(); });
   $("#nombre").oninput = (e) => st.nombre = e.target.value;
+  $("#correo").oninput = (e) => st.correo = e.target.value.trim();
   ayuda();
 }
 
@@ -264,6 +267,7 @@ async function enviar() {
   const tel = (st.tel || "").replace(/\D/g, "");
   if (tel.length !== 8) { avisar("Escribe los 8 números de tu celular, los que van después del +569."); return; }
   if ((st.nombre || "").trim().length < 2) { avisar("Escribe tu nombre."); return; }
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]{2,}$/.test((st.correo || "").trim())) { avisar("Escribe un correo válido, por ejemplo nombre@gmail.com."); return; }
   if (st.entrega === "despacho" && despachoActivo()) {
     if (!comunaElegida()) { avisar("Elige tu comuna para el despacho."); return; }
     if ((st.direccion || "").trim().length < 5) { avisar("Escribe tu dirección para el despacho."); return; }
@@ -271,7 +275,7 @@ async function enviar() {
   st.enviando = true; barra();
   try {
     const r = await fetch(window.API_URL, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" },
-      body: JSON.stringify({ accion: "pedido", ref: st.ref, nombre: st.nombre, telefono: tel, nota: "", cantidades: st.cant,
+      body: JSON.stringify({ accion: "pedido", ref: st.ref, nombre: st.nombre, telefono: tel, correo: (st.correo || "").trim(), nota: "", cantidades: st.cant,
         entrega: despachoActivo() ? st.entrega : "retiro", comuna: comunaElegida(), direccion: st.direccion || "", trampa: ($("#trampa") || {}).value || "" }) });
     const d = await r.json();
     st.enviando = false;

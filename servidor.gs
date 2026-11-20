@@ -5,7 +5,7 @@
  * (Este archivo se carga solo desde el cargador de Apps Script; la clave TOKEN la aporta el cargador.)
  */
 const HOJA = "Pedidos";
-const COLUMNAS = ["ref", "creado", "nombre", "telefono", "nota", "lineas", "total", "importado", "entrega", "comuna", "direccion", "envio"];
+const COLUMNAS = ["ref", "creado", "nombre", "telefono", "nota", "lineas", "total", "importado", "entrega", "comuna", "direccion", "envio", "correo"];
 const HOJA_OP = "Opiniones";
 const COL_OP = ["ref", "creado", "estrellas", "comentario", "importado"];
 
@@ -75,6 +75,8 @@ function crearPedido(d) {
     if (tel.length === 8) tel = "569" + tel;
     if (nombre.length < 2) return json({ ok: false, error: "Escribe tu nombre." });
     if (tel.length < 8 || tel.length > 13) return json({ ok: false, error: "Escribe un teléfono válido." });
+    const correo = String(d.correo || "").trim().toLowerCase().substring(0, 80);
+    if (correo && !/^[^@\s]+@[^@\s]+\.[^@\s]{2,}$/.test(correo)) return json({ ok: false, error: "Escribe un correo válido (por ejemplo, nombre@gmail.com)." });
     const ref = String(d.ref || "").replace(/[^a-zA-Z0-9-]/g, "").substring(0, 40);
     if (ref.length < 8) return json({ ok: false, error: "Solicitud inválida." });
     const h = hoja();
@@ -106,7 +108,7 @@ function crearPedido(d) {
     if (despacho && (c.despacho.comunas || []).indexOf(comuna) < 0) return json({ ok: false, error: "Por ahora solo entregamos a domicilio en " + (c.despacho.comunas || []).join(", ") + ". Puedes retirar gratis en el metro Escuela Militar." });
     const envio = calcularEnvio(c, total, entrega, comuna);
     const creado = Utilities.formatDate(new Date(), "America/Santiago", "yyyy-MM-dd HH:mm");
-    h.appendRow([ref, "'" + creado, nombre, "'" + tel, nota, JSON.stringify(lineas), total + envio, "", entrega, comuna, direccion, envio]);
+    h.appendRow([ref, "'" + creado, nombre, "'" + tel, nota, JSON.stringify(lineas), total + envio, "", entrega, comuna, direccion, envio, correo]);
     cache.put(clave, String(n + 1), 3600);
     return json({ ok: true, pedido: { ref: ref, nombre: nombre, lineas: lineas, total: total + envio, creado: creado,
                                       entrega: entrega, comuna: comuna, direccion: direccion, envio: envio }, pago: c.pago || {} });
@@ -125,7 +127,7 @@ function pendientes() {
     salida.push({ ref: String(filas[i][0]), creado: String(filas[i][1]), nombre: filas[i][2], telefono: String(filas[i][3]).replace(/\D/g, ""),
                   nota: filas[i][4], lineas: JSON.parse(filas[i][5]), total: filas[i][6],
                   entrega: String(filas[i][8] || "retiro"), comuna: String(filas[i][9] || ""), direccion: String(filas[i][10] || ""),
-                  envio: Number(filas[i][11] || 0) });
+                  envio: Number(filas[i][11] || 0), correo: String(filas[i][12] || "") });
   }
   return json({ ok: true, pedidos: salida });
 }
