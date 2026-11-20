@@ -26,7 +26,7 @@ function hoja() {
   return h;
 }
 
-// Despacho: gratis desde el mínimo en las comunas de reparto; bajo eso se cobra el costo. Otras comunas: siempre el costo.
+// Despacho: gratis desde el mínimo en las comunas de reparto; bajo eso se cobra el costo. Otras comunas no se aceptan (se rechazan en crearPedido).
 function calcularEnvio(c, subtotal, entrega, comuna) {
   const r = c.despacho || {};
   if (entrega !== "despacho" || !r.activo) return 0;
@@ -103,6 +103,7 @@ function crearPedido(d) {
     const comuna = despacho ? String(d.comuna || "").replace(/\s+/g, " ").trim().substring(0, 40) : "";
     const direccion = despacho ? String(d.direccion || "").replace(/\s+/g, " ").trim().substring(0, 120) : "";
     if (despacho && (!comuna || direccion.length < 5)) return json({ ok: false, error: "Escribe tu comuna y dirección para el despacho." });
+    if (despacho && (c.despacho.comunas || []).indexOf(comuna) < 0) return json({ ok: false, error: "Por ahora solo entregamos a domicilio en " + (c.despacho.comunas || []).join(", ") + ". Puedes retirar gratis en el metro Escuela Militar." });
     const envio = calcularEnvio(c, total, entrega, comuna);
     const creado = Utilities.formatDate(new Date(), "America/Santiago", "yyyy-MM-dd HH:mm");
     h.appendRow([ref, "'" + creado, nombre, "'" + tel, nota, JSON.stringify(lineas), total + envio, "", entrega, comuna, direccion, envio]);

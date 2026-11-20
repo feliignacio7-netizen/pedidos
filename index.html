@@ -101,11 +101,10 @@ function lineasActuales() { return st.cat.productos.filter((p) => st.cant[p.id] 
 const OTRA = "__otra";
 function despachoActivo() { return !!(st.cat && st.cat.despacho && st.cat.despacho.activo); }
 function comunaZona() { return !!(st.cat && st.cat.despacho && (st.cat.despacho.comunas || []).indexOf(st.comuna) >= 0); }
-function comunaElegida() { return st.comuna === OTRA ? (st.otra || "").trim() : st.comuna; }
+function comunaElegida() { return st.comuna; }
 function envioActual() {   // misma regla que el servidor; null = por coordinar
   if (st.entrega !== "despacho" || !despachoActivo()) return 0;
   const r = st.cat.despacho, sub = totales()[0];
-  if (!comunaZona()) return Number(r.costo || 0);   // otras comunas: tarifa fija
   return sub >= Number(r.minimo || 0) ? 0 : Number(r.costo || 0);
 }
 function totales() { let t = 0, u = 0; st.cat.productos.forEach((p) => { t += (st.cant[p.id] || 0) * p.precio; u += st.cant[p.id] || 0; }); return [t, u]; }
@@ -128,7 +127,6 @@ function dibujarPaso1() {
   <div class="card sm" style="margin-top:12px"><div style="font-weight:600;font-size:16px;margin-bottom:6px">Opciones de entrega</div>
     <div class="fila" style="align-items:flex-start"><span>🚇 Metro Escuela Militar<div class="mut xs">Con previa coordinación</div></span><span class="gratis">Gratis</span></div>
     ${despachoActivo() ? `<hr><div class="fila" style="align-items:flex-start"><span>🚗 A domicilio · ${esc(listaComunas(c.despacho.comunas))}<div class="mut xs">${Number(c.despacho.minimo || 0) ? `Gratis desde ${peso(c.despacho.minimo)} · bajo eso ` : ""}${peso(c.despacho.costo || 0)}</div></span><b style="white-space:nowrap">${Number(c.despacho.minimo || 0) ? "desde " + peso(c.despacho.minimo) : peso(c.despacho.costo || 0)}</b></div>
-      <div class="fila" style="align-items:flex-start;margin-top:8px"><span>🚗 A domicilio · otras comunas</span><b style="white-space:nowrap">${peso(c.despacho.costo || 0)}</b></div>
       <div id="falta1" style="margin-top:12px" hidden></div>` : ""}</div>
   ${c.whatsapp ? `<a class="btn out" style="margin-top:12px" target="_blank" rel="noopener" href="https://wa.me/${waNum(c.whatsapp)}?text=${encodeURIComponent("Hola! Tengo una consulta sobre los alfajores.")}">💬 ¿Tienes alguna duda? Escríbenos</a>` : ""}`;
   document.querySelectorAll(".cant button").forEach((b) => b.onclick = () => { const id = b.dataset.id; st.cant[id] = Math.max(0, Math.min(100, (st.cant[id] || 0) + Number(b.dataset.d))); $("#n" + id).textContent = st.cant[id]; barra(); });
@@ -159,11 +157,10 @@ function dibujarPaso2() {
         <div class="mut sm">Entrega gratis en el metro, con previa coordinación</div></div></label>
     ${act ? `<label class="opc ${st.entrega === "despacho" ? "sel" : ""}" id="o_despacho"><input type="radio" name="ent" value="despacho" ${st.entrega === "despacho" ? "checked" : ""}>
       <div style="flex:1"><div class="fila"><b style="font-weight:600">🚗 Entrega a domicilio</b><span></span></div>
-        <div class="mut sm">${esc(listaComunas(r.comunas))}: ${Number(r.minimo || 0) ? `<b>gratis desde ${peso(r.minimo)}</b>, bajo eso ${peso(r.costo || 0)}` : peso(r.costo || 0)}<br>Otras comunas: ${peso(r.costo || 0)}</div></div></label>
+        <div class="mut sm">${esc(listaComunas(r.comunas))}: ${Number(r.minimo || 0) ? `<b>gratis desde ${peso(r.minimo)}</b>, bajo eso ${peso(r.costo || 0)}` : peso(r.costo || 0)}<br>Otras comunas: retiro gratis en el metro Escuela Militar</div></div></label>
     <div id="desp" ${st.entrega === "despacho" ? "" : "hidden"}>
       <label class="c" for="comuna">Comuna</label>
-      <select id="comuna"><option value="">Elige tu comuna</option>${(r.comunas || []).map((x) => `<option ${st.comuna === x ? "selected" : ""}>${esc(x)}</option>`).join("")}<option value="${OTRA}" ${st.comuna === OTRA ? "selected" : ""}>Otra comuna</option></select>
-      <input id="otra" placeholder="¿Cuál comuna?" style="margin-top:8px" value="${esc(st.otra)}" ${st.comuna === OTRA ? "" : "hidden"}>
+      <select id="comuna"><option value="">Elige tu comuna</option>${(r.comunas || []).map((x) => `<option ${st.comuna === x ? "selected" : ""}>${esc(x)}</option>`).join("")}</select>
       <label class="c" for="dir">Dirección</label><input id="dir" autocomplete="street-address" placeholder="Calle, número y depto" value="${esc(st.direccion)}">
       <div id="meta" style="margin-top:12px"></div>
     </div>` : ""}
@@ -181,7 +178,6 @@ function dibujarPaso2() {
       const e = envioActual(), m = $("#meta"), min = Number(r.minimo || 0), sub = totales()[0];
       if (m) {
         if (!st.comuna) m.innerHTML = "";
-        else if (!comunaZona()) m.innerHTML = `<div class="sm">Entrega a otras comunas: <b>${peso(Number(r.costo || 0))}</b>. Es gratis desde ${peso(min)} solo en ${esc(listaComunas(r.comunas))}.</div>`;
         else if (!min || !Number(r.costo || 0)) m.innerHTML = "";
         else if (sub >= min) m.innerHTML = `<div class="sm" style="color:var(--ok);font-weight:600">🎉 ¡Tu entrega a ${esc(st.comuna)} es gratis!</div>`;
         else m.innerHTML = `<div class="sm">Te faltan <b>${peso(min - sub)}</b> para envío gratis a tu domicilio (desde ${peso(min)}). <a href="#" id="sumar" style="color:var(--pri-t);font-weight:600">+ Agregar alfajores</a></div>
@@ -195,8 +191,7 @@ function dibujarPaso2() {
     document.querySelectorAll('input[name="ent"]').forEach((x) => x.onchange = () => {
       st.entrega = x.value; $("#desp").hidden = st.entrega !== "despacho";
       $("#o_retiro").classList.toggle("sel", st.entrega === "retiro"); $("#o_despacho").classList.toggle("sel", st.entrega === "despacho"); info(); });
-    $("#comuna").onchange = (e) => { st.comuna = e.target.value; $("#otra").hidden = st.comuna !== OTRA; info(); };
-    $("#otra").oninput = (e) => st.otra = e.target.value;
+    $("#comuna").onchange = (e) => { st.comuna = e.target.value; info(); };
     $("#dir").oninput = (e) => st.direccion = e.target.value;
   }
   info();
