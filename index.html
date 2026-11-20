@@ -55,6 +55,10 @@ input:focus,textarea:focus{border-color:var(--pri);box-shadow:0 0 0 1px var(--pr
 hr{border:0;border-top:1px solid var(--bor);margin:8px 0}
 .aviso{position:fixed;left:50%;top:14px;transform:translateX(-50%);background:var(--fg);color:var(--bg);padding:12px 18px;border-radius:12px;font-size:14px;z-index:9;max-width:90vw;display:none}
 [hidden]{display:none!important}
+.opc{display:flex;gap:10px;align-items:flex-start;border:1px solid var(--bor2);border-radius:12px;padding:12px;margin-top:8px;cursor:pointer}
+.opc.sel{border-color:var(--pri);box-shadow:0 0 0 1px var(--pri);background:#F6EDE6}
+.opc input{width:20px;height:20px;margin:2px 0 0;flex-shrink:0;accent-color:var(--pri-t);padding:0}
+select{width:100%;font:inherit;font-size:16px;color:var(--fg);background:var(--sup);border:1px solid var(--bor2);border-radius:6px;padding:15px 14px;outline:none;-webkit-appearance:none;appearance:none}
 </style>
 </head>
 <body>
@@ -80,7 +84,7 @@ const peso = (n) => "$" + Math.round(n).toLocaleString("es-CL");
 const esc = (t) => String(t ?? "").replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const BANDERA = '<svg viewBox="0 0 90 60"><rect width="90" height="60" fill="#fff"/><rect y="30" width="90" height="30" fill="#D52B1E"/><rect width="30" height="30" fill="#0039A6"/><polygon points="15,5 17.5,11.6 24.5,11.9 19,16.3 20.9,23.1 15,19.2 9.1,23.1 11,16.3 5.5,11.9 12.5,11.6" fill="#fff"/></svg>';
 const NOMBRES = ["Elige", "Tus datos", "Pago y envío"];
-const st = { paso: 1, cat: null, cant: {}, ref: (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random().toString(36).slice(2)), enviando: false };
+const st = { paso: 1, cat: null, cant: {}, entrega: "retiro", comuna: "", otra: "", direccion: "", ref: (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random().toString(36).slice(2)), enviando: false };
 
 function avisar(t) { const a = $("#aviso"); a.textContent = t; a.style.display = "block"; clearTimeout(avisar.t); avisar.t = setTimeout(() => a.style.display = "none", 3200); }
 function sabor(n) { return String(n).trim().toLowerCase().replace(/^alfajor(es)?\s+(de\s+)?/, ""); }
@@ -92,6 +96,16 @@ function frase(ls) {
 }
 function waNum(d) { d = String(d).replace(/\D/g, ""); return d.length === 9 ? "56" + d : d; }
 function lineasActuales() { return st.cat.productos.filter((p) => st.cant[p.id] > 0).map((p) => ({ producto_id: p.id, nombre: p.nombre, cantidad: st.cant[p.id], precio: p.precio })); }
+const OTRA = "__otra";
+function despachoActivo() { return !!(st.cat && st.cat.despacho && st.cat.despacho.activo); }
+function comunaElegida() { return st.comuna === OTRA ? (st.otra || "").trim() : st.comuna; }
+function envioActual() {   // misma regla que el servidor; null = por coordinar
+  if (st.entrega !== "despacho" || !despachoActivo()) return 0;
+  const r = st.cat.despacho, sub = totales()[0];
+  if (st.comuna === OTRA) return null;
+  if ((r.comunas || []).indexOf(st.comuna) < 0) return 0;
+  return sub >= Number(r.minimo || 0) ? 0 : Number(r.costo || 0);
+}
 function totales() { let t = 0, u = 0; st.cat.productos.forEach((p) => { t += (st.cant[p.id] || 0) * p.precio; u += st.cant[p.id] || 0; }); return [t, u]; }
 
 function indicador() {
@@ -125,7 +139,36 @@ function dibujarPaso2() {
     <div class="xs mut" id="ayuda" style="margin-top:4px">Escribe solo los 8 números que siguen al +569</div>
     <label class="c" for="nota">Comentario (opcional)</label><textarea id="nota" rows="2" placeholder="Ej: hora que te acomoda o dónde nos juntamos">${esc(st.nota || "")}</textarea>
     <input class="trampa" id="trampa" tabindex="-1" autocomplete="off" aria-hidden="true">
-  </div>`;
+  </div>
+  ${despachoActivo() ? `<div class="card" style="margin-top:12px"><div style="font-weight:600;font-size:16px">¿Cómo lo recibes?</div>
+    <label class="opc ${st.entrega === "retiro" ? "sel" : ""}" id="o_retiro"><input type="radio" name="ent" value="retiro" ${st.entrega === "retiro" ? "checked" : ""}>
+      <div><div style="font-weight:500">🚇 Retiro</div><div class="mut sm">${esc(st.cat.entrega || "Coordinamos el lugar")}</div></div></label>
+    <label class="opc ${st.entrega === "despacho" ? "sel" : ""}" id="o_despacho"><input type="radio" name="ent" value="despacho" ${st.entrega === "despacho" ? "checked" : ""}>
+      <div><div style="font-weight:500">🚗 Despacho a domicilio</div><div class="mut sm">Con previa coordinación</div></div></label>
+    <div id="desp" ${st.entrega === "despacho" ? "" : "hidden"}>
+      <label class="c" for="comuna">Comuna</label>
+      <select id="comuna"><option value="">Elige tu comuna</option>${(st.cat.despacho.comunas || []).map((x) => `<option ${st.comuna === x ? "selected" : ""}>${esc(x)}</option>`).join("")}<option value="${OTRA}" ${st.comuna === OTRA ? "selected" : ""}>Otra comuna</option></select>
+      <input id="otra" placeholder="¿Cuál comuna?" style="margin-top:8px" value="${esc(st.otra)}" ${st.comuna === OTRA ? "" : "hidden"}>
+      <label class="c" for="dir">Dirección</label><input id="dir" autocomplete="street-address" placeholder="Calle, número y depto" value="${esc(st.direccion)}">
+      <div class="sm" id="envtxt" style="margin-top:8px"></div>
+    </div></div>` : ""}`;
+  if (despachoActivo()) {
+    const info = () => {
+      const e = envioActual(), r = st.cat.despacho, t = $("#envtxt");
+      if (!st.comuna) t.textContent = "";
+      else if (e === null) t.textContent = "El costo del envío lo coordinamos por WhatsApp.";
+      else if (e === 0) t.textContent = "Envío sin costo.";
+      else t.textContent = `Envío ${peso(e)} (sin costo desde ${peso(r.minimo)}).`;
+      barra();
+    };
+    document.querySelectorAll('input[name="ent"]').forEach((r) => r.onchange = () => {
+      st.entrega = r.value; $("#desp").hidden = st.entrega !== "despacho";
+      $("#o_retiro").classList.toggle("sel", st.entrega === "retiro"); $("#o_despacho").classList.toggle("sel", st.entrega === "despacho"); info(); });
+    $("#comuna").onchange = (e) => { st.comuna = e.target.value; $("#otra").hidden = st.comuna !== OTRA; info(); };
+    $("#otra").oninput = (e) => st.otra = e.target.value;
+    $("#dir").oninput = (e) => st.direccion = e.target.value;
+    info();
+  }
   const tel = $("#tel");
   function limpiar(v) { let d = String(v).replace(/\D/g, ""); if (d.length > 8) { d = d.replace(/^0+/, ""); if (d.length > 8 && d.startsWith("56")) d = d.slice(2); if (d.length > 8 && d.startsWith("9")) d = d.slice(1); } return d.slice(0, 8); }
   function ayuda() { const f = 8 - tel.value.length, a = $("#ayuda");
@@ -149,11 +192,15 @@ function dibujarPaso3(ped, pago) {
   const c = st.cat;
   const rut = (r) => { const l = String(r || "").replace(/[^0-9kK]/g, ""); return l.length < 8 ? String(r || "").trim() : Number(l.slice(0, -1)).toLocaleString("es-CL") + "-" + l.slice(-1).toUpperCase(); };
   const filas = [["Nombre", pago.titular], ["RUT", rut(pago.rut)], ["Banco", pago.banco], ["Tipo de cuenta", pago.tipo], ["N° de cuenta", pago.numero], ["Correo", pago.correo]].filter((f) => f[1]);
-  const texto = `Hola! Hice un pedido de ${frase(ped.lineas)} por ${peso(ped.total)}. Adjunto el comprobante de transferencia.`;
+  const desp = (ped.entrega || st.entrega) === "despacho";
+  const comuna = ped.comuna || comunaElegida(), dir = ped.direccion || st.direccion;
+  const envio = Number(ped.envio || 0), coordinar = desp && st.comuna === OTRA;
+  const texto = `Hola! Hice un pedido de ${frase(ped.lineas)} por ${peso(ped.total)}${desp ? ` con despacho a ${comuna}` : ""}. Adjunto el comprobante de transferencia.`;
   $("#cuerpo").innerHTML = indicador() + `
   <div class="card"><h2 class="tit">Paso 3 · Paga y envíanos el comprobante</h2><div class="mut sm">¡Gracias! Tu pedido quedó anotado. Solo faltan 3 cosas:</div></div>
   <div class="card" style="margin-top:12px"><div style="font-weight:600;font-size:16px;margin-bottom:6px">Resumen de tu pedido</div>
     ${ped.lineas.map((l) => `<div class="fila sm"><span>${l.cantidad} × ${esc(l.nombre)}</span><span>${peso(l.cantidad * l.precio)}</span></div>`).join("")}
+    ${desp ? `<div class="fila sm"><span>🚗 Envío a ${esc(comuna)}</span><span>${coordinar ? "por coordinar" : envio ? peso(envio) : "sin costo"}</span></div>` : ""}
     <hr><div class="fila"><span style="font-weight:600;font-size:16px">Total a transferir</span><span style="font-weight:700;font-size:20px">${peso(ped.total)}</span></div></div>
   <div class="card" style="margin-top:12px"><div class="fila" style="justify-content:flex-start"><span class="mini">1</span><b style="font-size:16px">Transfiere ${peso(ped.total)}</b></div>
     ${filas.length ? `<button class="btn cp" id="cptodo">Copiar todos los datos</button>` + filas.map((f, i) => `<div class="dato"><div><div class="mut xs">${f[0]}</div><b>${esc(f[1])}</b></div></div>`).join("") : `<div class="mut sm" style="margin-top:6px">Te enviaremos los datos de transferencia por WhatsApp.</div>`}
@@ -161,7 +208,8 @@ function dibujarPaso3(ped, pago) {
   <div class="card" style="margin-top:12px"><div class="fila" style="justify-content:flex-start"><span class="mini">2</span><b style="font-size:16px">Envíanos el comprobante</b></div>
     ${c.whatsapp ? `<div class="mut sm" style="margin:6px 0 10px">Mándalo por WhatsApp para que sepamos que ya pagaste.</div><a class="btn wa" target="_blank" rel="noopener" href="https://wa.me/${waNum(c.whatsapp)}?text=${encodeURIComponent(texto)}">💬 Enviar comprobante por WhatsApp</a>` : `<div class="mut sm" style="margin-top:6px">Escríbenos por Instagram @alfajores_vicencio con el comprobante.</div>`}</div>
   <div class="card" style="margin-top:12px"><div class="fila" style="justify-content:flex-start"><span class="mini">3</span><b style="font-size:16px">Coordinamos la entrega</b></div>
-    <div class="sm" style="margin-top:6px">${esc(c.entrega)}</div><div class="mut xs">Te escribimos para confirmar el lugar y la hora.</div></div>
+    ${desp ? `<div class="sm" style="margin-top:6px">🚗 Despacho a ${esc(dir)}, ${esc(comuna)}</div><div class="mut xs">Te escribimos para coordinar el día y la hora.${coordinar ? " El costo del envío lo vemos por WhatsApp." : ""}</div>`
+           : `<div class="sm" style="margin-top:6px">${esc(c.entrega)}</div><div class="mut xs">Te escribimos para confirmar el lugar y la hora.</div>`}</div>
   ${c.whatsapp ? `<a class="btn out" style="margin-top:12px" target="_blank" rel="noopener" href="https://wa.me/${waNum(c.whatsapp)}?text=${encodeURIComponent("Hola! Tengo una consulta sobre mi pedido de " + frase(ped.lineas) + ".")}">💬 Tengo una consulta</a>` : ""}
   <p class="mut sm" style="text-align:center">Puedes cerrar esta página. ¡Gracias por apoyar a Alfajores Vicencio! 🤎</p>`;
   const b = $("#cptodo"); if (b) b.onclick = () => copiar(filas.map((f) => f[1]).join("\n"), "Datos copiados ✅ Pégalos en tu app del banco");
@@ -169,7 +217,9 @@ function dibujarPaso3(ped, pago) {
 
 function barra() {
   const [t, u] = totales();
-  $("#tot").textContent = peso(t); $("#unid").textContent = `${u} alfajor${u !== 1 ? "es" : ""}`;
+  const e = st.paso === 2 ? envioActual() : 0;
+  $("#tot").textContent = peso(t + (e || 0));
+  $("#unid").textContent = `${u} alfajor${u !== 1 ? "es" : ""}` + (st.paso === 2 && st.entrega === "despacho" ? (e ? " + envío" : e === null ? " · envío por coordinar" : " · envío sin costo") : "");
   $("#barra").hidden = st.paso === 3;
   $("#atras").hidden = st.paso !== 2;
   $("#sig").textContent = st.paso === 1 ? "Continuar →" : (st.enviando ? "Enviando…" : "Confirmar pedido");
@@ -182,10 +232,15 @@ async function enviar() {
   const tel = (st.tel || "").replace(/\D/g, "");
   if (tel.length !== 8) { avisar("Escribe los 8 números de tu celular, los que van después del +569."); return; }
   if ((st.nombre || "").trim().length < 2) { avisar("Escribe tu nombre."); return; }
+  if (st.entrega === "despacho" && despachoActivo()) {
+    if (!comunaElegida()) { avisar("Elige tu comuna para el despacho."); return; }
+    if ((st.direccion || "").trim().length < 5) { avisar("Escribe tu dirección para el despacho."); return; }
+  }
   st.enviando = true; barra();
   try {
     const r = await fetch(window.API_URL, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" },
-      body: JSON.stringify({ accion: "pedido", ref: st.ref, nombre: st.nombre, telefono: tel, nota: st.nota || "", cantidades: st.cant, trampa: ($("#trampa") || {}).value || "" }) });
+      body: JSON.stringify({ accion: "pedido", ref: st.ref, nombre: st.nombre, telefono: tel, nota: st.nota || "", cantidades: st.cant,
+        entrega: despachoActivo() ? st.entrega : "retiro", comuna: comunaElegida(), direccion: st.direccion || "", trampa: ($("#trampa") || {}).value || "" }) });
     const d = await r.json();
     st.enviando = false;
     if (!d.ok) { avisar(d.error || "No pudimos guardar tu pedido. Intenta de nuevo."); barra(); return; }
