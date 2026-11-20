@@ -138,13 +138,12 @@ function dibujarPaso1() {
 function dibujarPaso2() {
   const [t] = totales();
   $("#cuerpo").innerHTML = indicador() + `
-  <div class="card"><h2 class="tit">Paso 2 · Tus datos</h2>
+  <div class="card"><h2 class="tit">Paso 2 · Tus datos y la entrega</h2>
     <div class="mut sm">Tu pedido: ${esc(frase(lineasActuales()))} · ${peso(t)}</div>
     <label class="c" for="nombre">Tu nombre</label><input id="nombre" autocomplete="name" value="${esc(st.nombre || "")}">
     <label class="c" for="tel">Tu WhatsApp</label>
     <div class="tel"><div class="pref">${BANDERA}<span>+569</span></div><input id="tel" inputmode="numeric" pattern="[0-9]*" autocomplete="off" placeholder="1234 5678" value="${esc(st.tel || "")}"></div>
     <div class="xs mut" id="ayuda" style="margin-top:4px">Escribe solo los 8 números que siguen al +569</div>
-    <label class="c" for="nota">Comentario (opcional)</label><textarea id="nota" rows="2" placeholder="Ej: hora que te acomoda o dónde nos juntamos">${esc(st.nota || "")}</textarea>
     <input class="trampa" id="trampa" tabindex="-1" autocomplete="off" aria-hidden="true">
   </div>
   ${despachoActivo() ? `<div class="card" style="margin-top:12px"><div style="font-weight:600;font-size:16px">¿Cómo lo recibes?</div>
@@ -158,7 +157,12 @@ function dibujarPaso2() {
       <input id="otra" placeholder="¿Cuál comuna?" style="margin-top:8px" value="${esc(st.otra)}" ${st.comuna === OTRA ? "" : "hidden"}>
       <label class="c" for="dir">Dirección</label><input id="dir" autocomplete="street-address" placeholder="Calle, número y depto" value="${esc(st.direccion)}">
       <div class="sm" id="envtxt" style="margin-top:8px"></div>
-    </div></div>` : ""}`;
+    </div></div>` : ""}
+  <div class="card" style="margin-top:12px"><div style="font-weight:600;font-size:16px">¿Cuándo te acomoda?</div>
+    <label class="c" for="hora">Día y hora de la entrega</label>
+    <input id="hora" autocomplete="off" placeholder="Ej: mañana a las 18:30" value="${esc(st.hora || "")}">
+    <label class="c" for="nota">Comentario (opcional)</label><textarea id="nota" rows="2" placeholder="Ej: prefiero juntarnos en otro lugar cercano">${esc(st.nota || "")}</textarea>
+  </div>`;
   if (despachoActivo()) {
     const info = () => {
       const e = envioActual(), r = st.cat.despacho, t = $("#envtxt");
@@ -185,6 +189,7 @@ function dibujarPaso2() {
   tel.addEventListener("input", () => { tel.value = limpiar(tel.value); st.tel = tel.value; ayuda(); });
   tel.addEventListener("paste", (e) => { e.preventDefault(); tel.value = limpiar((e.clipboardData || window.clipboardData).getData("text")); st.tel = tel.value; ayuda(); });
   $("#nombre").oninput = (e) => st.nombre = e.target.value;
+  $("#hora").oninput = (e) => st.hora = e.target.value;
   $("#nota").oninput = (e) => st.nota = e.target.value;
   ayuda();
 }
@@ -250,10 +255,12 @@ async function enviar() {
     if (!comunaElegida()) { avisar("Elige tu comuna para el despacho."); return; }
     if ((st.direccion || "").trim().length < 5) { avisar("Escribe tu dirección para el despacho."); return; }
   }
+  if ((st.hora || "").trim().length < 3) { avisar("Cuéntanos cuándo y a qué hora te acomoda la entrega."); return; }
+  const notaFinal = ("Entrega: " + st.hora.trim() + ((st.nota || "").trim() ? " · " + st.nota.trim() : "")).slice(0, 280);
   st.enviando = true; barra();
   try {
     const r = await fetch(window.API_URL, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" },
-      body: JSON.stringify({ accion: "pedido", ref: st.ref, nombre: st.nombre, telefono: tel, nota: st.nota || "", cantidades: st.cant,
+      body: JSON.stringify({ accion: "pedido", ref: st.ref, nombre: st.nombre, telefono: tel, nota: notaFinal, cantidades: st.cant,
         entrega: despachoActivo() ? st.entrega : "retiro", comuna: comunaElegida(), direccion: st.direccion || "", trampa: ($("#trampa") || {}).value || "" }) });
     const d = await r.json();
     st.enviando = false;
