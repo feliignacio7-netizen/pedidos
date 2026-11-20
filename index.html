@@ -217,7 +217,7 @@ function dibujarPaso3(ped, pago) {
   const nom = (st.nombre || "").trim().split(/\s+/).map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(" ");
   const texto = [`Hola 👋, soy ${nom}`,
     e("🛒") + frase(ped.lineas),
-    desp ? e("🚗") + `${comuna}${dir ? " · " + dir : ""}` : e("🚇") + "Metro Escuela Militar",
+    desp ? e("🚗") + `${comuna}${dir ? " · " + dir : ""}` : e("🚇") + "Metro Escuela Militar · horario por coordinar",
     e("💰") + "Total " + peso(ped.total) + (desp && envio ? " (con envío)" : ""),
     e("🧾") + "Te envío mi comprobante 🙏"].join("\n");
   $("#cuerpo").innerHTML = indicador() + `
