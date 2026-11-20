@@ -124,16 +124,8 @@ function dibujarPaso1() {
     ${c.productos.map((p) => `<div class="fila prod"><div><div style="font-weight:500;font-size:16px">${/negro/i.test(p.nombre) ? "⚫" : "⚪"} ${esc(p.nombre)}</div><div class="mut sm">${peso(p.precio)} c/u</div></div>
       <div class="cant"><button data-id="${p.id}" data-d="-1" aria-label="Quitar">−</button><span class="num" id="n${p.id}">${st.cant[p.id] || 0}</span><button class="mas" data-id="${p.id}" data-d="1" aria-label="Sumar">+</button></div></div>`).join("")}
   </div>
-  <div class="card sm" style="margin-top:12px"><div style="font-weight:600;font-size:16px">¿Cómo quieres recibirlo?</div>
-    <label class="opc ${st.entrega === "retiro" || !despachoActivo() ? "sel" : ""}" id="c_retiro"><input type="radio" name="ent1" value="retiro" ${st.entrega === "retiro" || !despachoActivo() ? "checked" : ""}>
-      <div style="flex:1"><div class="fila"><b style="font-weight:600">🚇 Metro Escuela Militar</b><span class="gratis">Gratis</span></div><div class="mut xs">Con previa coordinación</div></div></label>
-    ${despachoActivo() ? `<label class="opc ${st.entrega === "despacho" ? "sel" : ""}" id="c_despacho"><input type="radio" name="ent1" value="despacho" ${st.entrega === "despacho" ? "checked" : ""}>
-      <div style="flex:1"><div class="fila"><b style="font-weight:600">🚗 A domicilio</b><span style="font-weight:600;white-space:nowrap">${Number(c.despacho.minimo || 0) ? "gratis desde " + peso(c.despacho.minimo) : peso(c.despacho.costo || 0)}</span></div>
-        <div class="mut xs">${esc(listaComunas(c.despacho.comunas))}${Number(c.despacho.minimo || 0) ? ` · bajo ${peso(c.despacho.minimo)}: ${peso(c.despacho.costo || 0)}` : ""}</div></div></label>
-      <div id="falta1" style="margin-top:12px" hidden></div>` : ""}</div>
+  <div class="card sm" id="falta1" style="margin-top:12px;border-color:var(--pri);background:#F6EDE6" hidden></div>
   ${c.whatsapp ? `<a class="btn out" style="margin-top:12px" target="_blank" rel="noopener" href="https://wa.me/${waNum(c.whatsapp)}?text=${encodeURIComponent("Hola! Tengo una consulta sobre los alfajores.")}">💬 ¿Tienes alguna duda? Escríbenos</a>` : ""}`;
-  document.querySelectorAll('input[name="ent1"]').forEach((x) => x.onchange = () => {
-    st.entrega = x.value; $("#c_retiro").classList.toggle("sel", st.entrega === "retiro"); const d = $("#c_despacho"); if (d) d.classList.toggle("sel", st.entrega === "despacho"); barra(); });
   document.querySelectorAll(".cant button").forEach((b) => b.onclick = () => { const id = b.dataset.id; st.cant[id] = Math.max(0, Math.min(100, (st.cant[id] || 0) + Number(b.dataset.d))); $("#n" + id).textContent = st.cant[id]; barra(); });
 }
 
@@ -253,7 +245,7 @@ function barra() {
   const f1 = $("#falta1");
   if (f1 && st.paso === 1) {
     const r = st.cat.despacho || {}, min = Number(r.minimo || 0), falta = Math.max(0, min - t);
-    f1.hidden = !(despachoActivo() && st.entrega === "despacho" && min > 0 && Number(r.costo || 0) > 0);
+    f1.hidden = !(despachoActivo() && min > 0 && Number(r.costo || 0) > 0);
     f1.innerHTML = t <= 0 ? `🚗 Envío gratis a tu domicilio en ${esc(listaComunas(r.comunas))} desde <b>${peso(min)}</b>`
       : falta > 0 ? `🚗 Te faltan <b>${peso(falta)}</b> para envío gratis a tu domicilio` : `🎉 ¡Tienes <b>envío gratis</b> a tu domicilio en ${esc(listaComunas(r.comunas))}!`;
     f1.innerHTML += `<div class="prog"><i style="width:${Math.min(100, Math.round(t * 100 / (min || 1)))}%"></i></div>`;
