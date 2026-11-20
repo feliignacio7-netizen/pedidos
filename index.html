@@ -210,14 +210,16 @@ function dibujarPaso3(ped, pago) {
   const desp = (ped.entrega || st.entrega) === "despacho";
   const comuna = ped.comuna || comunaElegida(), dir = ped.direccion || st.direccion;
   const envio = Number(ped.envio || 0), coordinar = false;
-  // Los emojis se ven bien en WhatsApp del celular; WhatsApp de escritorio (Windows) los muestra como "�", así que ahí van sin emojis.
-  const movil = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent), e = (x) => movil ? x + " " : "";
+  // En el celular se usa wa.me. En computador, wa.me abre la app de escritorio y esta pierde los emojis ("�"),
+  // así que se abre WhatsApp Web directamente, que sí los respeta.
+  const movil = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent), e = (x) => x + " ";
+  const enlaceWa = (t) => (movil ? "https://wa.me/" + waNum(c.whatsapp) + "?text=" : "https://web.whatsapp.com/send?phone=" + waNum(c.whatsapp) + "&text=") + encodeURIComponent(t);
   const nom = (st.nombre || "").trim().split(/\s+/).map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(" ");
-  const texto = [`Hola${movil ? " 👋" : ""}, soy ${nom}`,
+  const texto = [`Hola 👋, soy ${nom}`,
     e("🛒") + frase(ped.lineas),
     desp ? e("🚗") + `${comuna}${dir ? " · " + dir : ""}` : e("🚇") + "Metro Escuela Militar",
     e("💰") + "Total " + peso(ped.total) + (desp && envio ? " (con envío)" : ""),
-    e("🧾") + "Te envío mi comprobante" + (movil ? " 🙏" : ". ¡Gracias!")].join("\n");
+    e("🧾") + "Te envío mi comprobante 🙏"].join("\n");
   $("#cuerpo").innerHTML = indicador() + `
   <div class="card"><h2 class="tit">Pago</h2><div class="mut sm">¡Gracias! Tu pedido quedó anotado. Solo faltan 3 cosas:</div></div>
   <div class="card" style="margin-top:12px"><div style="font-weight:600;font-size:16px;margin-bottom:6px">Resumen de tu pedido</div>
@@ -228,7 +230,7 @@ function dibujarPaso3(ped, pago) {
     ${filas.length ? `<button class="btn cp" id="cptodo">Copiar todos los datos</button>` + filas.map((f, i) => `<div class="dato"><div><div class="mut xs">${f[0]}</div><b>${esc(f[1])}</b></div></div>`).join("") : `<div class="mut sm" style="margin-top:6px">Te enviaremos los datos de transferencia por WhatsApp.</div>`}
     <div class="mut xs" style="padding-top:8px">Tu pedido queda <b>reservado por 2 horas</b>. Se confirma cuando recibimos la transferencia; si no la recibimos en ese plazo, lo liberamos.</div></div>
   <div class="card" style="margin-top:12px"><div class="fila" style="justify-content:flex-start"><span class="mini">2</span><b style="font-size:16px">Envíanos el comprobante</b></div>
-    ${c.whatsapp ? `<a class="btn wa" id="wacomp" style="margin-top:12px;height:auto;min-height:52px;padding:12px 16px;text-align:center;line-height:1.25" target="_blank" rel="noopener" href="https://wa.me/${waNum(c.whatsapp)}?text=${encodeURIComponent(texto)}">💬 Envía un resumen de tu pedido y adjunta el comprobante</a>` : `<div class="mut sm" style="margin-top:6px">Escríbenos por Instagram @alfajores_vicencio con el comprobante.</div>`}</div>
+    ${c.whatsapp ? `<a class="btn wa" id="wacomp" style="margin-top:12px;height:auto;min-height:52px;padding:12px 16px;text-align:center;line-height:1.25" target="_blank" rel="noopener" href="${enlaceWa(texto)}">💬 Envía un resumen de tu pedido y adjunta el comprobante</a>` : `<div class="mut sm" style="margin-top:6px">Escríbenos por Instagram @alfajores_vicencio con el comprobante.</div>`}</div>
   <div class="card" style="margin-top:12px"><div class="fila" style="justify-content:flex-start"><span class="mini">3</span><b style="font-size:16px">Coordinamos la entrega</b></div>
     ${desp ? `<div class="sm" style="margin-top:6px">🚗 A domicilio: ${esc(dir)}, ${esc(comuna)}</div>` : `<div class="sm" style="margin-top:6px">🚇 Metro Escuela Militar</div>`}
     <div class="mut sm" style="margin-top:4px">Apenas recibamos tu comprobante, <b>te escribimos por WhatsApp</b> para coordinar el día y la hora de la entrega.</div></div>
