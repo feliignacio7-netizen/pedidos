@@ -165,11 +165,6 @@ function dibujarPaso2() {
       <div id="meta" style="margin-top:12px"></div>
     </div>` : ""}
   </div>
-  <div class="card" style="margin-top:12px"><h2 class="tit">¿Cuándo te acomoda?</h2>
-    <label class="c" for="hora">Día y hora de la entrega</label>
-    <input id="hora" autocomplete="off" placeholder="Ej: mañana a las 18:30" value="${esc(st.hora || "")}">
-    <label class="c" for="nota">Comentario (opcional)</label><textarea id="nota" rows="2" placeholder="Ej: prefiero juntarnos en otro lugar cercano">${esc(st.nota || "")}</textarea>
-  </div>
   <div class="card" style="margin-top:12px"><h2 class="tit" style="margin-bottom:6px">Resumen del pedido</h2><div id="resumen"></div>
     <a href="#" id="editar" class="sm" style="color:var(--pri-t);font-weight:600;display:inline-block;margin-top:8px">← Cambiar mis alfajores</a></div>`;
   $("#editar").onclick = (ev) => { ev.preventDefault(); irA(1); };
@@ -203,8 +198,6 @@ function dibujarPaso2() {
   tel.addEventListener("input", () => { tel.value = limpiar(tel.value); st.tel = tel.value; ayuda(); });
   tel.addEventListener("paste", (e) => { e.preventDefault(); tel.value = limpiar((e.clipboardData || window.clipboardData).getData("text")); st.tel = tel.value; ayuda(); });
   $("#nombre").oninput = (e) => st.nombre = e.target.value;
-  $("#hora").oninput = (e) => st.hora = e.target.value;
-  $("#nota").oninput = (e) => st.nota = e.target.value;
   ayuda();
 }
 
@@ -233,13 +226,17 @@ function dibujarPaso3(ped, pago) {
     ${filas.length ? `<button class="btn cp" id="cptodo">Copiar todos los datos</button>` + filas.map((f, i) => `<div class="dato"><div><div class="mut xs">${f[0]}</div><b>${esc(f[1])}</b></div></div>`).join("") : `<div class="mut sm" style="margin-top:6px">Te enviaremos los datos de transferencia por WhatsApp.</div>`}
     <div class="mut xs" style="padding-top:8px">Tu pedido queda <b>reservado por 2 horas</b>. Se confirma cuando recibimos la transferencia; si no la recibimos en ese plazo, lo liberamos.</div></div>
   <div class="card" style="margin-top:12px"><div class="fila" style="justify-content:flex-start"><span class="mini">2</span><b style="font-size:16px">Envíanos el comprobante</b></div>
-    ${c.whatsapp ? `<div class="mut sm" style="margin:6px 0 10px">Mándalo por WhatsApp para que sepamos que ya pagaste.</div><a class="btn wa" target="_blank" rel="noopener" href="https://wa.me/${waNum(c.whatsapp)}?text=${encodeURIComponent(texto)}">💬 Enviar comprobante por WhatsApp</a>` : `<div class="mut sm" style="margin-top:6px">Escríbenos por Instagram @alfajores_vicencio con el comprobante.</div>`}</div>
+    ${c.whatsapp ? `<div class="mut sm" style="margin:6px 0 10px">Mándalo por WhatsApp para que sepamos que ya pagaste. Si quieres contarnos algo, escríbelo aquí y va en el mismo mensaje.</div>
+      <label class="c" for="coment" style="margin-top:0">Comentarios (opcional)</label>
+      <textarea id="coment" rows="2" maxlength="300" placeholder="Ej: prefiero en la tarde, o dónde nos juntamos"></textarea>
+      <a class="btn wa" id="wacomp" style="margin-top:10px" target="_blank" rel="noopener" href="https://wa.me/${waNum(c.whatsapp)}?text=${encodeURIComponent(texto)}">💬 Enviar comprobante por WhatsApp</a>` : `<div class="mut sm" style="margin-top:6px">Escríbenos por Instagram @alfajores_vicencio con el comprobante.</div>`}</div>
   <div class="card" style="margin-top:12px"><div class="fila" style="justify-content:flex-start"><span class="mini">3</span><b style="font-size:16px">Coordinamos la entrega</b></div>
-    ${desp ? `<div class="sm" style="margin-top:6px">🚗 Despacho a ${esc(dir)}, ${esc(comuna)}</div><div class="mut xs">Te escribimos para coordinar el día y la hora.${coordinar ? " El costo del envío lo vemos por WhatsApp." : ""}</div>`
-           : `<div class="sm" style="margin-top:6px">🚇 Metro Escuela Militar</div><div class="mut xs">Te escribimos para confirmar el lugar y la hora.</div>`}
-    ${st.hora ? `<div class="mut xs" style="margin-top:4px">🕐 Tú indicaste: ${esc(st.hora)}</div>` : ""}</div>
+    ${desp ? `<div class="sm" style="margin-top:6px">🚗 A domicilio: ${esc(dir)}, ${esc(comuna)}</div>` : `<div class="sm" style="margin-top:6px">🚇 Metro Escuela Militar</div>`}
+    <div class="mut sm" style="margin-top:4px">Apenas recibamos tu comprobante, <b>te escribimos por WhatsApp</b> para coordinar el día y la hora de la entrega.</div></div>
   ${c.whatsapp ? `<a class="btn out" style="margin-top:12px" target="_blank" rel="noopener" href="https://wa.me/${waNum(c.whatsapp)}?text=${encodeURIComponent("Hola! Tengo una consulta sobre mi pedido de " + frase(ped.lineas) + ".")}">💬 Tengo una consulta</a>` : ""}
   <p class="mut sm" style="text-align:center">Puedes cerrar esta página. ¡Gracias por apoyar a Alfajores Vicencio! 🤎</p>`;
+  const com = $("#coment"), wa = $("#wacomp");
+  if (com && wa) com.oninput = () => { const x = com.value.trim(); wa.href = `https://wa.me/${waNum(c.whatsapp)}?text=${encodeURIComponent(texto + (x ? "\n\nComentarios: " + x : ""))}`; };
   const b = $("#cptodo"); if (b) b.onclick = () => copiar(filas.map((f) => f[1]).join("\n"), "Datos copiados ✅ Pégalos en tu app del banco");
 }
 
@@ -272,12 +269,10 @@ async function enviar() {
     if (!comunaElegida()) { avisar("Elige tu comuna para el despacho."); return; }
     if ((st.direccion || "").trim().length < 5) { avisar("Escribe tu dirección para el despacho."); return; }
   }
-  if ((st.hora || "").trim().length < 3) { avisar("Cuéntanos cuándo y a qué hora te acomoda la entrega."); return; }
-  const notaFinal = ("Entrega: " + st.hora.trim() + ((st.nota || "").trim() ? " · " + st.nota.trim() : "")).slice(0, 280);
   st.enviando = true; barra();
   try {
     const r = await fetch(window.API_URL, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" },
-      body: JSON.stringify({ accion: "pedido", ref: st.ref, nombre: st.nombre, telefono: tel, nota: notaFinal, cantidades: st.cant,
+      body: JSON.stringify({ accion: "pedido", ref: st.ref, nombre: st.nombre, telefono: tel, nota: "", cantidades: st.cant,
         entrega: despachoActivo() ? st.entrega : "retiro", comuna: comunaElegida(), direccion: st.direccion || "", trampa: ($("#trampa") || {}).value || "" }) });
     const d = await r.json();
     st.enviando = false;
