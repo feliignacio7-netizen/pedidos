@@ -120,12 +120,12 @@ function envioActual() {   // misma regla que el servidor; null = por coordinar
   const r = st.cat.despacho, sub = totales()[0];
   return sub >= Number(r.minimo || 0) ? 0 : Number(r.costo || 0);
 }
-function totales() { let t = 0, u = 0; st.cat.productos.forEach((p) => { t += (st.cant[p.id] || 0) * p.precio; if (!p.navidad) u += st.cant[p.id] || 0; }); return [t, u]; }
+function totales() { let t = 0, u = 0; st.cat.productos.forEach((p) => { t += (st.cant[p.id] || 0) * p.precio; u += (st.cant[p.id] || 0) * (p.navidad || 1); }); return [t, u]; }
 const alfajores = () => st.cat.productos.filter((p) => !p.navidad);
 const cajasCat = () => st.cat.productos.filter((p) => p.navidad);
 const negroId = () => (alfajores().find((p) => /negro/i.test(p.nombre)) || {}).id;
 const blancoId = () => (alfajores().find((p) => /blanco/i.test(p.nombre)) || {}).id;
-function piso(id) { return st.cajas.reduce((a, c) => a + (id === negroId() ? c.neg : id === blancoId() ? c.bla : 0), 0); }  // alfajores que ya van dentro de cajas
+function piso(id) { return 0; }
 
 function indicador() {
   let h = "";
@@ -146,21 +146,21 @@ function dibujarCajas() {
     cuerpo = `<div class="fila" style="margin-top:6px"><div style="font-weight:500">⚫ Negro</div><div class="cant"><button data-s="neg" data-d="-1" aria-label="Quitar negro">−</button><span class="num">${a.neg}</span><button class="mas" data-s="neg" data-d="1" aria-label="Sumar negro">+</button></div></div>
       <div class="fila"><div style="font-weight:500">⚪ Blanco</div><div class="cant"><button data-s="bla" data-d="-1" aria-label="Quitar blanco">−</button><span class="num">${a.bla}</span><button class="mas" data-s="bla" data-d="1" aria-label="Sumar blanco">+</button></div></div>
       <div class="mut sm" style="margin:6px 0">${falta > 0 ? `Elige ${falta} más para completar la caja` : falta < 0 ? "Te pasaste: quita " + (-falta) : "¡Caja completa! 🎁"}</div>
-      <button class="btn cp" id="addcaja" ${falta !== 0 ? "disabled" : ""}>Agregar caja · ${peso(a.neg * (alfajores().find((p) => p.id === negroId()) || {}).precio + a.bla * (alfajores().find((p) => p.id === blancoId()) || {}).precio + c.precio)}</button>`;
+      <button class="btn cp" id="addcaja" ${falta !== 0 ? "disabled" : ""}>Agregar caja · ${peso(c.precio)}</button>`;
   }
-  const lista = st.cajas.map((k, i) => `<div class="cajita"><div class="sm">🎁 Caja de ${k.tam}: ${k.neg ? k.neg + " negro" + (k.neg > 1 ? "s" : "") : ""}${k.neg && k.bla ? " y " : ""}${k.bla ? k.bla + " blanco" + (k.bla > 1 ? "s" : "") : ""}</div><button class="q" data-q="${i}">Quitar</button></div>`).join("");
-  el.innerHTML = `<h2 class="tit">🎄 Caja de Navidad</h2><div class="mut sm">Caja de regalo con cinta y etiqueta navideña. Tú eliges los sabores; la caja suma ${peso((cj[0] || {}).precio || 0)}.</div>${tams}${cuerpo}${lista}`;
+  const lista = st.cajas.map((k, i) => `<div class="cajita"><div class="sm">🎁 Caja de ${k.tam} · ${peso((cj.find((p) => p.id === k.cajaId) || {}).precio || 0)}: ${k.neg ? k.neg + " negro" + (k.neg > 1 ? "s" : "") : ""}${k.neg && k.bla ? " y " : ""}${k.bla ? k.bla + " blanco" + (k.bla > 1 ? "s" : "") : ""}</div><button class="q" data-q="${i}">Quitar</button></div>`).join("");
+  el.innerHTML = `<h2 class="tit">🎄 Caja de Navidad</h2><div class="mut sm">Caja de regalo con cinta y etiqueta navideña. Tú eliges los sabores: cada alfajor $1.000 y la caja suma $1.000 (la de 8 sale $9.000).</div>${tams}${cuerpo}${lista}`;
   el.querySelectorAll(".tam button").forEach((b) => b.onclick = () => { const t = Number(b.dataset.t); st.arma = st.arma && st.arma.tam === t ? null : { tam: t, neg: 0, bla: 0 }; dibujarCajas(); });
   el.querySelectorAll("[data-s]").forEach((b) => b.onclick = () => { const k = b.dataset.s, n = st.arma.neg + st.arma.bla + Number(b.dataset.d); if (Number(b.dataset.d) > 0 && n > st.arma.tam) return; st.arma[k] = Math.max(0, st.arma[k] + Number(b.dataset.d)); dibujarCajas(); });
   const ad = $("#addcaja"); if (ad) ad.onclick = () => {
     const c = cj.find((p) => p.navidad === st.arma.tam);
     st.cajas.push({ tam: st.arma.tam, neg: st.arma.neg, bla: st.arma.bla, cajaId: c.id });
-    st.cant[c.id] = (st.cant[c.id] || 0) + 1; st.cant[negroId()] = (st.cant[negroId()] || 0) + st.arma.neg; st.cant[blancoId()] = (st.cant[blancoId()] || 0) + st.arma.bla;
+    st.cant[c.id] = (st.cant[c.id] || 0) + 1;
     st.arma = null; dibujarPaso1(); barra(); avisar("Caja agregada al carrito 🎁");
   };
   el.querySelectorAll("[data-q]").forEach((b) => b.onclick = () => {
     const k = st.cajas.splice(Number(b.dataset.q), 1)[0];
-    st.cant[k.cajaId] = Math.max(0, (st.cant[k.cajaId] || 0) - 1); st.cant[negroId()] = Math.max(0, (st.cant[negroId()] || 0) - k.neg); st.cant[blancoId()] = Math.max(0, (st.cant[blancoId()] || 0) - k.bla);
+    st.cant[k.cajaId] = Math.max(0, (st.cant[k.cajaId] || 0) - 1);
     dibujarPaso1(); barra();
   });
 }
@@ -169,7 +169,7 @@ function dibujarPaso1() {
   const c = st.cat, hayCajas = cajasCat().length > 0 && negroId() && blancoId();
   $("#cuerpo").innerHTML = indicador() + `
   <div class="card"><h2 class="tit">Tu carrito</h2><div class="mut xs">Toca + para sumar los que quieras.</div>
-    ${alfajores().map((p) => `<div class="fila prod"><div><div style="font-weight:500;font-size:16px">${/negro/i.test(p.nombre) ? "⚫" : "⚪"} ${esc(p.nombre)}</div><div class="mut sm">${peso(p.precio)} c/u${piso(p.id) ? ` · ${piso(p.id)} en cajas` : ""}</div></div>
+    ${alfajores().map((p) => `<div class="fila prod"><div><div style="font-weight:500;font-size:16px">${/negro/i.test(p.nombre) ? "⚫" : "⚪"} ${esc(p.nombre)}</div><div class="mut sm">${peso(p.precio)} c/u</div></div>
       <div class="cant"><button data-id="${p.id}" data-d="-1" aria-label="Quitar">−</button><span class="num" id="n${p.id}">${st.cant[p.id] || 0}</span><button class="mas" data-id="${p.id}" data-d="1" aria-label="Sumar">+</button></div></div>`).join("")}
   </div>
   ${hayCajas ? `<div class="card nav" id="navidad" style="margin-top:12px"></div>` : ""}
@@ -183,7 +183,8 @@ function listaComunas(c) { c = c || []; return c.length > 1 ? c.slice(0, -1).joi
 function resumenPaso2() {   // resumen del pedido como en un carrito: subtotal, envío y total
   const el = $("#resumen"); if (!el) return;
   const [t] = totales(), e = envioActual(), desp = st.entrega === "despacho" && despachoActivo();
-  el.innerHTML = lineasActuales().map((l) => `<div class="fila sm"><span>${l.cantidad} × ${/^caja de navidad/i.test(l.nombre) ? "🎁 " + esc(l.nombre) + " (caja)" : esc(sabor(l.nombre))}</span><span>${peso(l.cantidad * l.precio)}</span></div>`).join("") +
+  el.innerHTML = lineasActuales().filter((l) => !/^caja de navidad/i.test(l.nombre)).map((l) => `<div class="fila sm"><span>${l.cantidad} × ${esc(sabor(l.nombre))}</span><span>${peso(l.cantidad * l.precio)}</span></div>`).join("") +
+    st.cajas.map((k) => `<div class="fila sm"><span>🎁 Caja de Navidad de ${k.tam} (${k.neg ? k.neg + " negro" + (k.neg > 1 ? "s" : "") : ""}${k.neg && k.bla ? " y " : ""}${k.bla ? k.bla + " blanco" + (k.bla > 1 ? "s" : "") : ""})</span><span>${peso((cajasCat().find((p) => p.id === k.cajaId) || {}).precio || 0)}</span></div>`).join("") +
     `<hr><div class="fila sm"><span class="mut">Subtotal</span><span>${peso(t)}</span></div>
      <div class="fila sm"><span class="mut">${desp ? "Entrega a domicilio" : "Entrega"}</span><span>${!desp ? "Gratis" : (e === null ? "por coordinar" : e ? peso(e) : "Gratis")}</span></div>
      <hr><div class="fila"><span style="font-weight:600;font-size:16px">Total</span><span style="font-weight:700;font-size:20px">${peso(t + (e || 0))}</span></div>`;
@@ -383,7 +384,7 @@ async function enviar() {
   st.enviando = true; barra();
   try {
     const r = await fetch(window.API_URL, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" },
-      body: JSON.stringify({ accion: "pedido", ref: st.ref, nombre: st.nombre, telefono: tel, correo: (st.correo || "").trim(), nota: "", cantidades: st.cant,
+      body: JSON.stringify({ accion: "pedido", ref: st.ref, nombre: st.nombre, telefono: tel, correo: (st.correo || "").trim(), nota: st.cajas.length ? "#C " + st.cajas.map((k) => `${k.cajaId}=${negroId()}:${k.neg},${blancoId()}:${k.bla}`).join(";") : "", cantidades: st.cant,
         entrega: despachoActivo() ? st.entrega : "retiro", comuna: comunaElegida(), direccion: st.direccion || "", trampa: ($("#trampa") || {}).value || "" }) });
     const d = await r.json();
     st.enviando = false;
