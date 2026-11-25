@@ -61,6 +61,12 @@ hr{border:0;border-top:1px solid var(--bor);margin:8px 0}
 .prog{height:6px;border-radius:99px;background:var(--hov);margin-top:8px;overflow:hidden}.prog i{display:block;height:100%;background:var(--pri)}
 .opc input{width:20px;height:20px;margin:2px 0 0;flex-shrink:0;accent-color:var(--pri-t);padding:0}
 select{width:100%;font:inherit;font-size:16px;color:var(--fg);background:var(--sup);border:1px solid var(--bor2);border-radius:6px;padding:15px 14px;outline:none;-webkit-appearance:none;appearance:none}
+.nav{border:1.5px solid var(--pri);background:#F6EDE6}
+.nav h2{margin:0}.tam{display:flex;gap:8px;margin:10px 0}
+.tam button{flex:1;min-height:48px;border-radius:12px;border:1.5px solid var(--bor2);background:var(--sup);color:var(--fg);font:inherit;font-weight:600;cursor:pointer;touch-action:manipulation}
+.tam button.sel{background:var(--pri);border-color:var(--pri)}
+.cajita{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:8px 0;border-top:1px solid var(--bor)}
+.cajita button.q{border:0;background:transparent;color:var(--pri-t);font:inherit;text-decoration:underline;cursor:pointer;padding:8px}
 </style>
 </head>
 <body>
@@ -86,11 +92,18 @@ const peso = (n) => "$" + Math.round(n).toLocaleString("es-CL");
 const esc = (t) => String(t ?? "").replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const BANDERA = '<svg viewBox="0 0 90 60"><rect width="90" height="60" fill="#fff"/><rect y="30" width="90" height="30" fill="#D52B1E"/><rect width="30" height="30" fill="#0039A6"/><polygon points="15,5 17.5,11.6 24.5,11.9 19,16.3 20.9,23.1 15,19.2 9.1,23.1 11,16.3 5.5,11.9 12.5,11.6" fill="#fff"/></svg>';
 const NOMBRES = ["Carrito", "Envío", "Pago"];
-const st = { paso: 1, cat: null, cant: {}, entrega: "retiro", comuna: "", otra: "", direccion: "", ref: (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random().toString(36).slice(2)), enviando: false };
+const st = { paso: 1, cat: null, cant: {}, cajas: [], arma: null, entrega: "retiro", comuna: "", otra: "", direccion: "", ref: (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random().toString(36).slice(2)), enviando: false };
 
 function avisar(t) { const a = $("#aviso"); a.textContent = t; a.style.display = "block"; clearTimeout(avisar.t); avisar.t = setTimeout(() => a.style.display = "none", 3200); }
 function sabor(n) { return String(n).trim().toLowerCase().replace(/^alfajor(es)?\s+(de\s+)?/, ""); }
 function frase(ls) {
+  const cj = ls.filter((l) => /^caja de navidad/i.test(l.nombre)); ls = ls.filter((l) => !/^caja de navidad/i.test(l.nombre));
+  const extra = cj.map((l) => `${l.cantidad} caja${l.cantidad !== 1 ? "s" : ""} de Navidad`);
+  if (!ls.length) return extra.join(" y ");
+  const p0 = frase0(ls);
+  return extra.length ? p0 + " (" + extra.join(" y ") + " incluidas)" : p0;
+}
+function frase0(ls) {
   const p = ls.map((l) => { let r = String(l.nombre).trim().toLowerCase().replace(/^alfajor(es)?\s*/, "");
     if (l.cantidad !== 1 && !r.startsWith("de ") && r && !r.endsWith("s")) r += "s";
     return `${l.cantidad} alfajor${l.cantidad !== 1 ? "es" : ""} ${r}`.trim(); });
@@ -107,7 +120,12 @@ function envioActual() {   // misma regla que el servidor; null = por coordinar
   const r = st.cat.despacho, sub = totales()[0];
   return sub >= Number(r.minimo || 0) ? 0 : Number(r.costo || 0);
 }
-function totales() { let t = 0, u = 0; st.cat.productos.forEach((p) => { t += (st.cant[p.id] || 0) * p.precio; u += st.cant[p.id] || 0; }); return [t, u]; }
+function totales() { let t = 0, u = 0; st.cat.productos.forEach((p) => { t += (st.cant[p.id] || 0) * p.precio; if (!p.navidad) u += st.cant[p.id] || 0; }); return [t, u]; }
+const alfajores = () => st.cat.productos.filter((p) => !p.navidad);
+const cajasCat = () => st.cat.productos.filter((p) => p.navidad);
+const negroId = () => (alfajores().find((p) => /negro/i.test(p.nombre)) || {}).id;
+const blancoId = () => (alfajores().find((p) => /blanco/i.test(p.nombre)) || {}).id;
+function piso(id) { return st.cajas.reduce((a, c) => a + (id === negroId() ? c.neg : id === blancoId() ? c.bla : 0), 0); }  // alfajores que ya van dentro de cajas
 
 function indicador() {
   let h = "";
@@ -117,23 +135,55 @@ function indicador() {
   return `<div class="ind">${h}</div>`;
 }
 
+function dibujarCajas() {
+  const el = $("#navidad"); if (!el) return;
+  const cj = cajasCat(), a = st.arma;
+  const tams = `<div class="tam">${cj.map((p) => `<button data-t="${p.navidad}" class="${a && a.tam === p.navidad ? "sel" : ""}">${p.navidad} alfajores</button>`).join("")}</div>`;
+  let cuerpo = "";
+  if (a) {
+    const c = cj.find((p) => p.navidad === a.tam), falta = a.tam - a.neg - a.bla;
+    const precioAlf = (alfajores()[0] || {}).precio || 0;
+    cuerpo = `<div class="fila" style="margin-top:6px"><div style="font-weight:500">⚫ Negro</div><div class="cant"><button data-s="neg" data-d="-1" aria-label="Quitar negro">−</button><span class="num">${a.neg}</span><button class="mas" data-s="neg" data-d="1" aria-label="Sumar negro">+</button></div></div>
+      <div class="fila"><div style="font-weight:500">⚪ Blanco</div><div class="cant"><button data-s="bla" data-d="-1" aria-label="Quitar blanco">−</button><span class="num">${a.bla}</span><button class="mas" data-s="bla" data-d="1" aria-label="Sumar blanco">+</button></div></div>
+      <div class="mut sm" style="margin:6px 0">${falta > 0 ? `Elige ${falta} más para completar la caja` : falta < 0 ? "Te pasaste: quita " + (-falta) : "¡Caja completa! 🎁"}</div>
+      <button class="btn cp" id="addcaja" ${falta !== 0 ? "disabled" : ""}>Agregar caja · ${peso(a.neg * (alfajores().find((p) => p.id === negroId()) || {}).precio + a.bla * (alfajores().find((p) => p.id === blancoId()) || {}).precio + c.precio)}</button>`;
+  }
+  const lista = st.cajas.map((k, i) => `<div class="cajita"><div class="sm">🎁 Caja de ${k.tam}: ${k.neg ? k.neg + " negro" + (k.neg > 1 ? "s" : "") : ""}${k.neg && k.bla ? " y " : ""}${k.bla ? k.bla + " blanco" + (k.bla > 1 ? "s" : "") : ""}</div><button class="q" data-q="${i}">Quitar</button></div>`).join("");
+  el.innerHTML = `<h2 class="tit">🎄 Caja de Navidad</h2><div class="mut sm">Caja de regalo con cinta y etiqueta navideña. Tú eliges los sabores; la caja suma ${peso((cj[0] || {}).precio || 0)}.</div>${tams}${cuerpo}${lista}`;
+  el.querySelectorAll(".tam button").forEach((b) => b.onclick = () => { const t = Number(b.dataset.t); st.arma = st.arma && st.arma.tam === t ? null : { tam: t, neg: 0, bla: 0 }; dibujarCajas(); });
+  el.querySelectorAll("[data-s]").forEach((b) => b.onclick = () => { const k = b.dataset.s, n = st.arma.neg + st.arma.bla + Number(b.dataset.d); if (Number(b.dataset.d) > 0 && n > st.arma.tam) return; st.arma[k] = Math.max(0, st.arma[k] + Number(b.dataset.d)); dibujarCajas(); });
+  const ad = $("#addcaja"); if (ad) ad.onclick = () => {
+    const c = cj.find((p) => p.navidad === st.arma.tam);
+    st.cajas.push({ tam: st.arma.tam, neg: st.arma.neg, bla: st.arma.bla, cajaId: c.id });
+    st.cant[c.id] = (st.cant[c.id] || 0) + 1; st.cant[negroId()] = (st.cant[negroId()] || 0) + st.arma.neg; st.cant[blancoId()] = (st.cant[blancoId()] || 0) + st.arma.bla;
+    st.arma = null; dibujarPaso1(); barra(); avisar("Caja agregada al carrito 🎁");
+  };
+  el.querySelectorAll("[data-q]").forEach((b) => b.onclick = () => {
+    const k = st.cajas.splice(Number(b.dataset.q), 1)[0];
+    st.cant[k.cajaId] = Math.max(0, (st.cant[k.cajaId] || 0) - 1); st.cant[negroId()] = Math.max(0, (st.cant[negroId()] || 0) - k.neg); st.cant[blancoId()] = Math.max(0, (st.cant[blancoId()] || 0) - k.bla);
+    dibujarPaso1(); barra();
+  });
+}
+
 function dibujarPaso1() {
-  const c = st.cat;
+  const c = st.cat, hayCajas = cajasCat().length > 0 && negroId() && blancoId();
   $("#cuerpo").innerHTML = indicador() + `
   <div class="card"><h2 class="tit">Tu carrito</h2><div class="mut xs">Toca + para sumar los que quieras.</div>
-    ${c.productos.map((p) => `<div class="fila prod"><div><div style="font-weight:500;font-size:16px">${/negro/i.test(p.nombre) ? "⚫" : "⚪"} ${esc(p.nombre)}</div><div class="mut sm">${peso(p.precio)} c/u</div></div>
+    ${alfajores().map((p) => `<div class="fila prod"><div><div style="font-weight:500;font-size:16px">${/negro/i.test(p.nombre) ? "⚫" : "⚪"} ${esc(p.nombre)}</div><div class="mut sm">${peso(p.precio)} c/u${piso(p.id) ? ` · ${piso(p.id)} en cajas` : ""}</div></div>
       <div class="cant"><button data-id="${p.id}" data-d="-1" aria-label="Quitar">−</button><span class="num" id="n${p.id}">${st.cant[p.id] || 0}</span><button class="mas" data-id="${p.id}" data-d="1" aria-label="Sumar">+</button></div></div>`).join("")}
   </div>
+  ${hayCajas ? `<div class="card nav" id="navidad" style="margin-top:12px"></div>` : ""}
   <div class="card sm" id="falta1" style="margin-top:12px;border-color:var(--pri);background:#F6EDE6" hidden></div>
   ${c.whatsapp ? `<a class="btn out" style="margin-top:12px" target="_blank" rel="noopener" href="https://wa.me/${waNum(c.whatsapp)}?text=${encodeURIComponent("Hola! Tengo una consulta sobre los alfajores.")}">💬 ¿Tienes alguna duda? Escríbenos</a>` : ""}`;
-  document.querySelectorAll(".cant button").forEach((b) => b.onclick = () => { const id = b.dataset.id; st.cant[id] = Math.max(0, Math.min(100, (st.cant[id] || 0) + Number(b.dataset.d))); $("#n" + id).textContent = st.cant[id]; barra(); });
+  document.querySelectorAll(".cant button[data-id]").forEach((b) => b.onclick = () => { const id = Number(b.dataset.id) || b.dataset.id; st.cant[id] = Math.max(piso(id), Math.min(100, (st.cant[id] || 0) + Number(b.dataset.d))); $("#n" + id).textContent = st.cant[id]; barra(); });
+  if (hayCajas) dibujarCajas();
 }
 
 function listaComunas(c) { c = c || []; return c.length > 1 ? c.slice(0, -1).join(", ") + " y " + c[c.length - 1] : (c[0] || ""); }
 function resumenPaso2() {   // resumen del pedido como en un carrito: subtotal, envío y total
   const el = $("#resumen"); if (!el) return;
   const [t] = totales(), e = envioActual(), desp = st.entrega === "despacho" && despachoActivo();
-  el.innerHTML = lineasActuales().map((l) => `<div class="fila sm"><span>${l.cantidad} × ${esc(sabor(l.nombre))}</span><span>${peso(l.cantidad * l.precio)}</span></div>`).join("") +
+  el.innerHTML = lineasActuales().map((l) => `<div class="fila sm"><span>${l.cantidad} × ${/^caja de navidad/i.test(l.nombre) ? "🎁 " + esc(l.nombre) + " (caja)" : esc(sabor(l.nombre))}</span><span>${peso(l.cantidad * l.precio)}</span></div>`).join("") +
     `<hr><div class="fila sm"><span class="mut">Subtotal</span><span>${peso(t)}</span></div>
      <div class="fila sm"><span class="mut">${desp ? "Entrega a domicilio" : "Entrega"}</span><span>${!desp ? "Gratis" : (e === null ? "por coordinar" : e ? peso(e) : "Gratis")}</span></div>
      <hr><div class="fila"><span style="font-weight:600;font-size:16px">Total</span><span style="font-weight:700;font-size:20px">${peso(t + (e || 0))}</span></div>`;
