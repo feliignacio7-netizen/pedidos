@@ -92,7 +92,7 @@ const peso = (n) => "$" + Math.round(n).toLocaleString("es-CL");
 const esc = (t) => String(t ?? "").replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const BANDERA = '<svg viewBox="0 0 90 60"><rect width="90" height="60" fill="#fff"/><rect y="30" width="90" height="30" fill="#D52B1E"/><rect width="30" height="30" fill="#0039A6"/><polygon points="15,5 17.5,11.6 24.5,11.9 19,16.3 20.9,23.1 15,19.2 9.1,23.1 11,16.3 5.5,11.9 12.5,11.6" fill="#fff"/></svg>';
 const NOMBRES = ["Carrito", "Envío", "Pago"];
-const st = { paso: 1, cat: null, cant: {}, cajas: [], arma: null, entrega: "retiro", comuna: "", otra: "", direccion: "", ref: (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random().toString(36).slice(2)), enviando: false };
+const st = { paso: 1, cat: null, cant: {}, cajas: [], arma: null, medio: "", entrega: "retiro", comuna: "", otra: "", direccion: "", ref: (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random().toString(36).slice(2)), enviando: false };
 
 function avisar(t) { const a = $("#aviso"); a.textContent = t; a.style.display = "block"; clearTimeout(avisar.t); avisar.t = setTimeout(() => a.style.display = "none", 3200); }
 function sabor(n) { return String(n).trim().toLowerCase().replace(/^alfajor(es)?\s+(de\s+)?/, ""); }
@@ -276,6 +276,8 @@ async function comprimirImagen(archivo) {
   throw new Error("pesada");
 }
 
+// Logo de Mercado Pago: archivo oficial "mercadopago.svg" junto a la página (si no está, no se muestra nada).
+function LOGO_MP(estilo) { return `<img src="mercadopago.svg" alt="Mercado Pago" style="${estilo};width:auto;display:inline-block" onerror="this.remove()">`; }
 function dibujarPaso3(ped, pago) {
   const c = st.cat;
   const rut = (r) => { const l = String(r || "").replace(/[^0-9kK]/g, ""); return l.length < 8 ? String(r || "").trim() : Number(l.slice(0, -1)).toLocaleString("es-CL") + "-" + l.slice(-1).toUpperCase(); };
@@ -293,25 +295,38 @@ function dibujarPaso3(ped, pago) {
     desp ? e("🚗") + `${comuna}${dir ? " · " + dir : ""} · horario por coordinar` : e("🚇") + "Metro Escuela Militar · horario por coordinar",
     e("💰") + "Total " + peso(ped.total) + (desp && envio ? " (con envío)" : ""),
     e("🧾") + "Te envío mi comprobante 🙏"].join("\n");
-  $("#cuerpo").innerHTML = indicador() + `
-  <div class="card"><h2 class="tit">Pago</h2><div class="mut sm">¡Gracias! Tu pedido quedó anotado. Solo faltan 3 cosas:</div></div>
-  <div class="card" style="margin-top:12px"><div style="font-weight:600;font-size:16px;margin-bottom:6px">Resumen de tu pedido</div>
-    ${ped.lineas.map((l) => `<div class="fila sm"><span>${l.cantidad} × ${esc(l.nombre)}</span><span>${peso(l.cantidad * l.precio)}</span></div>`).join("")}
-    ${desp ? `<div class="fila sm"><span>🚗 Envío a ${esc(comuna)}</span><span>${coordinar ? "por coordinar" : envio ? peso(envio) : "sin costo"}</span></div>` : ""}
-    <hr><div class="fila"><span style="font-weight:600;font-size:16px">${c.mp ? "Total a pagar" : "Total a transferir"}</span><span style="font-weight:700;font-size:20px">${peso(ped.total)}</span></div></div>
-  ${c.mp ? `<div class="card" style="margin-top:12px;border:1.5px solid var(--pri)"><b style="font-size:16px">💳 Paga con tarjeta</b>
-    <div class="mut sm" style="margin-top:4px">Débito o crédito, con Mercado Pago. Se confirma al instante.</div>
-    <button class="btn g" id="pagomp" style="margin-top:10px;width:100%">Pagar ${peso(ped.total)} con tarjeta</button>
-    <div class="mut xs" style="margin-top:8px;text-align:center">o, si prefieres, transfiere:</div></div>` : ""}
+  const tef = `
   <div class="card" style="margin-top:12px"><div class="fila" style="justify-content:flex-start"><span class="mini">1</span><b style="font-size:16px">Transfiere ${peso(ped.total)}</b></div>
     ${filas.length ? `<button class="btn cp" id="cptodo">Copiar todos los datos</button>` + filas.map((f, i) => `<div class="dato"><div><div class="mut xs">${f[0]}</div><b>${esc(f[1])}</b></div></div>`).join("") : `<div class="mut sm" style="margin-top:6px">Te enviaremos los datos de transferencia por WhatsApp.</div>`}
     <div class="mut xs" style="padding-top:8px">Tu pedido queda <b>reservado por 2 horas</b>. Se confirma cuando recibimos la transferencia; si no la recibimos en ese plazo, lo liberamos.</div></div>
-  <div class="card" id="cardcomp" style="margin-top:12px"></div>
-  <div class="card" style="margin-top:12px"><div class="fila" style="justify-content:flex-start"><span class="mini">3</span><b style="font-size:16px">Coordinamos la entrega</b></div>
+  <div class="card" id="cardcomp" style="margin-top:12px"></div>`;
+  const mp = `
+  <div class="card" style="margin-top:12px"><div class="fila" style="justify-content:flex-start"><span class="mini">1</span><b style="font-size:16px">Paga ${peso(ped.total)} en Mercado Pago</b></div>
+    <div class="mut sm" style="margin-top:6px">Te llevamos al sitio seguro de Mercado Pago. Puedes pagar con tarjeta de débito, crédito o con tu saldo de Mercado Pago.</div>
+    <button class="btn g" id="pagomp" style="margin-top:12px;width:100%">${LOGO_MP("height:18px;margin-right:8px;vertical-align:-3px")}Pagar ${peso(ped.total)}</button>
+    <div class="mut xs" style="padding-top:8px">Al terminar vuelves a esta página y el pago <b>se confirma al instante</b>.</div></div>`;
+  const elegido = c.mp ? st.medio : "tef";
+  $("#cuerpo").innerHTML = indicador() + `
+  <div class="card"><h2 class="tit">Pago</h2><div class="mut sm">¡Gracias! Tu pedido quedó anotado. ${c.mp ? "Elige cómo quieres pagar:" : "Solo faltan 3 cosas:"}</div></div>
+  <div class="card" style="margin-top:12px"><div style="font-weight:600;font-size:16px;margin-bottom:6px">Resumen de tu pedido</div>
+    ${ped.lineas.map((l) => `<div class="fila sm"><span>${l.cantidad} × ${esc(l.nombre)}</span><span>${peso(l.cantidad * l.precio)}</span></div>`).join("")}
+    ${desp ? `<div class="fila sm"><span>🚗 Envío a ${esc(comuna)}</span><span>${coordinar ? "por coordinar" : envio ? peso(envio) : "sin costo"}</span></div>` : ""}
+    <hr><div class="fila"><span style="font-weight:600;font-size:16px">Total a pagar</span><span style="font-weight:700;font-size:20px">${peso(ped.total)}</span></div></div>
+  ${c.mp ? `<div class="card" style="margin-top:12px"><h2 class="tit">Medio de pago</h2>
+    <label class="opc ${elegido === "mp" ? "sel" : ""}" id="m_mp"><input type="radio" name="medio" value="mp" ${elegido === "mp" ? "checked" : ""}>
+      <div style="flex:1"><div class="fila"><b style="font-weight:600">Mercado Pago</b>${LOGO_MP("height:22px")}</div>
+        <div class="mut sm">Tarjeta de débito, crédito o saldo Mercado Pago. Se confirma al instante.</div></div></label>
+    <label class="opc ${elegido === "tef" ? "sel" : ""}" id="m_tef"><input type="radio" name="medio" value="tef" ${elegido === "tef" ? "checked" : ""}>
+      <div style="flex:1"><div class="fila"><b style="font-weight:600">Transferencia bancaria</b><span style="font-size:20px">🏦</span></div>
+        <div class="mut sm">Te damos los datos y nos envías el comprobante.</div></div></label>
+  </div>` : ""}
+  ${elegido === "mp" ? mp : elegido === "tef" ? tef : ""}
+  ${elegido ? `<div class="card" style="margin-top:12px"><div class="fila" style="justify-content:flex-start"><span class="mini">${elegido === "mp" ? 2 : 3}</span><b style="font-size:16px">Coordinamos la entrega</b></div>
     ${desp ? `<div class="sm" style="margin-top:6px">🚗 A domicilio: ${esc(dir)}, ${esc(comuna)}</div>` : `<div class="sm" style="margin-top:6px">🚇 Metro Escuela Militar</div>`}
-    <div class="mut sm" style="margin-top:4px">Apenas recibamos tu comprobante, <b>te escribimos por WhatsApp</b> para coordinar el día y la hora de la entrega.</div></div>
+    <div class="mut sm" style="margin-top:4px">Apenas ${elegido === "mp" ? "se confirme tu pago" : "recibamos tu comprobante"}, <b>te escribimos por WhatsApp</b> para coordinar el día y la hora de la entrega.</div></div>` : ""}
   ${c.whatsapp ? `<a class="btn out" style="margin-top:12px" target="_blank" rel="noopener" href="https://wa.me/${waNum(c.whatsapp)}?text=${encodeURIComponent("Hola! Tengo una consulta sobre mi pedido de " + frase(ped.lineas) + ".")}">💬 Tengo una consulta</a>` : ""}
   <p class="mut sm" style="text-align:center">Puedes cerrar esta página. ¡Gracias por apoyar a Alfajores Vicencio! 🤎</p>`;
+  document.querySelectorAll('input[name="medio"]').forEach((r) => r.onchange = () => { st.medio = r.value; dibujarPaso3(ped, pago); });
   // Paso 2: el cliente adjunta la captura o foto de su comprobante (se reduce en el teléfono y se guarda en la nube hasta que el ERP la baja).
   const wa = c.whatsapp
     ? `<a class="btn out" id="wacomp" style="margin-top:10px;height:auto;min-height:46px;padding:10px 14px;text-align:center;line-height:1.25" target="_blank" rel="noopener" href="${enlaceWa(texto)}">💬 Prefiero enviarlo por WhatsApp</a>`
@@ -414,7 +429,7 @@ async function irAPagarMp(ref, boton) {
     if (d.ok && d.url) { location.href = d.url; return; }
     avisar(d.error || "No pudimos abrir el pago con tarjeta. Transfiere, por favor.");
   } catch (e) { avisar("Sin conexión. Revisa tu internet e intenta de nuevo."); }
-  if (boton) { boton.disabled = false; boton.textContent = "Pagar con tarjeta"; }
+  if (boton) { boton.disabled = false; boton.textContent = "Pagar con Mercado Pago"; }
 }
 
 // El cliente vuelve desde Mercado Pago a ?ref=...&mp=1: se pregunta al script si el pago quedó aprobado.
@@ -437,7 +452,7 @@ async function volvioDeMp(ref) {
   } else {
     $("#cuerpo").innerHTML = `<div class="card"><b>Aún no vemos tu pago</b>
       <div class="mut sm" style="margin-top:6px">${d.estado === "rejected" ? "Mercado Pago rechazó el pago. Puedes intentar con otra tarjeta." : "Si alcanzaste a pagar, puede tardar unos minutos en confirmarse."}</div>
-      <button class="btn g" id="reint" style="margin-top:12px">Pagar con tarjeta</button>
+      <button class="btn g" id="reint" style="margin-top:12px">Pagar con Mercado Pago</button>
       <button class="btn out" id="revisar">Volver a revisar</button>${wa}</div>`;
     $("#reint").onclick = () => irAPagarMp(ref, $("#reint"));
     $("#revisar").onclick = () => volvioDeMp(ref);
