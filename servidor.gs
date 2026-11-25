@@ -5,7 +5,7 @@
  * (Este archivo se carga solo desde el cargador de Apps Script; la clave TOKEN la aporta el cargador.)
  */
 const HOJA = "Pedidos";
-const COLUMNAS = ["ref", "creado", "nombre", "telefono", "nota", "lineas", "total", "importado", "entrega", "comuna", "direccion", "envio", "correo"];
+const COLUMNAS = ["ref", "creado", "nombre", "telefono", "nota", "lineas", "total", "importado", "entrega", "comuna", "direccion", "envio", "correo", "mp_link", "mp_pago", "mp_avisado"];
 const HOJA_OP = "Opiniones";
 const COL_OP = ["ref", "creado", "estrellas", "comentario", "importado"];
 const HOJA_COMP = "Comprobantes";
@@ -41,18 +41,24 @@ function calcularEnvio(c, subtotal, entrega, comuna) {
 function doGet(e) {
   const c = leerCfg();
   return json({ ok: true, activo: c.activo !== false && (c.productos || []).length > 0, productos: c.productos || [],
-                entrega: c.entrega || "", whatsapp: c.whatsapp || "", despacho: c.despacho || { activo: false } });
+                entrega: c.entrega || "", whatsapp: c.whatsapp || "", despacho: c.despacho || { activo: false }, mp: !!(c.mp && mpToken()) });
 }
 
 function doPost(e) {
+  const q = (e && e.parameter) || {};
+  if (q.accion === "mp") return avisoMp(e);   // aviso automático de Mercado Pago (se verifica siempre con la API)
   let d;
   try { d = JSON.parse(e.postData.contents); } catch (err) { return json({ ok: false, error: "Solicitud inválida." }); }
   if (d.accion === "pedido") return crearPedido(d);
+  if (d.accion === "mp_link") return mpLink(d);
+  if (d.accion === "estado_mp") return estadoMp(d);
   if (d.accion === "opinion") return guardarOpinion(d);
   if (d.accion === "comprobante") return guardarComprobante(d);
   if (d.token !== TOKEN) return json({ ok: false, error: "No autorizado." });
   if (d.accion === "publicar") {
-    PropertiesService.getScriptProperties().setProperty("cfg", JSON.stringify(d.cfg || {}));
+    const props = PropertiesService.getScriptProperties();
+    props.setProperty("cfg", JSON.stringify(d.cfg || {}));
+    if (typeof d.mp_token === "string") { if (d.mp_token) props.setProperty("mp_token", d.mp_token); else props.deleteProperty("mp_token"); }
     return json({ ok: true });
   }
   if (d.accion === "pendientes") return pendientes();
@@ -60,6 +66,8 @@ function doPost(e) {
   if (d.accion === "opiniones") return opinionesPendientes();
   if (d.accion === "marcar_opiniones") return marcarOpiniones(d.refs || []);
   if (d.accion === "comprobantes") return comprobantesPendientes();
+  if (d.accion === "pagos_mp") return pagosMpPendientes();
+  if (d.accion === "marcar_pagos_mp") return marcarPagosMp(d.refs || []);
   if (d.accion === "marcar_comprobantes") return marcarComprobantes(d.refs || []);
   return json({ ok: false, error: "Acción desconocida." });
 }
@@ -283,5 +291,136 @@ function marcarComprobantes(refs) {
       h.getRange(i + 1, 5, 1, MAX_TROZOS).setValues([vacio]);      // y se borra la imagen de la nube
     }
   }
+  return json({ ok: true });
+}
+
+// ---------- Pago con tarjeta (Mercado Pago Checkout Pro) ----------
+// El ERP publica la clave (Access Token) de tu cuenta de Mercado Pago; queda guardada solo en este script, nunca en la página.
+// Flujo: la página pide un link de pago para su pedido → el cliente paga en Mercado Pago → Mercado Pago avisa aquí (y la página
+// vuelve a preguntar al regresar) → se verifica con la API que el pago esté aprobado y sea por el total → el ERP lo registra.
+function mpToken() { return PropertiesService.getScriptProperties().getProperty("mp_token") || ""; }
+
+function mpApi(metodo, ruta, cuerpo) {
+  const op = { method: metodo, headers: { Authorization: "Bearer " + mpToken() }, muteHttpExceptions: true };
+  if (cuerpo) { op.contentType = "application/json"; op.payload = JSON.stringify(cuerpo); }
+  const r = UrlFetchApp.fetch("https://api.mercadopago.com" + ruta, op);
+  let j = {}; try { j = JSON.parse(r.getContentText()); } catch (e) {}
+  if (r.getResponseCode() >= 300) throw new Error("Mercado Pago: " + ((j && (j.message || j.error)) || r.getResponseCode()));
+  return j;
+}
+
+function limpiarRef(r) { return String(r || "").replace(/[^a-zA-Z0-9-]/g, "").substring(0, 40); }
+
+function buscarFila(h, ref) {
+  const filas = h.getDataRange().getValues();
+  for (let i = 1; i < filas.length; i++) if (String(filas[i][0]) === ref) return { n: i + 1, f: filas[i] };
+  return null;
+}
+
+function mpLink(d) {
+  if (!mpToken()) return json({ ok: false, error: "El pago con tarjeta no está disponible. Transfiere, por favor." });
+  const ref = limpiarRef(d.ref);
+  if (ref.length < 8) return json({ ok: false, error: "Solicitud inválida." });
+  const lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    const h = hoja(), x = buscarFila(h, ref), I = {}; COLUMNAS.forEach((k, i) => I[k] = i);
+    if (!x) return json({ ok: false, error: "No encontramos tu pedido." });
+    if (String(x.f[I.mp_pago] || "")) return json({ ok: true, pagado: true });
+    if (String(x.f[I.mp_link] || "")) return json({ ok: true, url: String(x.f[I.mp_link]) });
+    const total = Math.round(Number(x.f[I.total] || 0));
+    if (!(total > 0)) return json({ ok: false, error: "Tu pedido no tiene total." });
+    const lineas = JSON.parse(x.f[I.lineas] || "[]");
+    const detalle = lineas.map(l => l.cantidad + " × " + l.nombre).join(", ").substring(0, 250);
+    let volver = String(d.volver || "");
+    if (!/^https:\/\/[a-z0-9-]+\.github\.io\/[A-Za-z0-9_\-\/.]*$/.test(volver)) volver = "";
+    const pref = { items: [{ id: ref, title: "Alfajores Vicencio", description: detalle, quantity: 1, unit_price: total, currency_id: "CLP" }],
+                   external_reference: ref, statement_descriptor: "VICENCIO",
+                   payer: { name: String(x.f[I.nombre] || ""), email: String(x.f[I.correo] || "") || undefined } };
+    if (volver) {
+      const v = volver + "?ref=" + ref + "&mp=1";
+      pref.back_urls = { success: v, pending: v, failure: v }; pref.auto_return = "approved";
+    }
+    try { const u = ScriptApp.getService().getUrl(); if (u) pref.notification_url = u + "?accion=mp"; } catch (e) {}
+    const r = mpApi("post", "/checkout/preferences", pref);
+    if (!r.init_point) return json({ ok: false, error: "No pudimos abrir el pago con tarjeta. Transfiere, por favor." });
+    h.getRange(x.n, I.mp_link + 1).setValue(r.init_point);
+    return json({ ok: true, url: r.init_point });
+  } catch (err) {
+    return json({ ok: false, error: "No pudimos abrir el pago con tarjeta. Transfiere, por favor." });
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+// Revisa en Mercado Pago si el pedido tiene un pago aprobado por el total. Si lo tiene, lo anota en la hoja para el ERP.
+function mpRevisar(ref, pagoId) {
+  let pagos = [];
+  if (pagoId) pagos = [mpApi("get", "/v1/payments/" + encodeURIComponent(pagoId))];
+  else pagos = (mpApi("get", "/v1/payments/search?sort=date_created&criteria=desc&external_reference=" + encodeURIComponent(ref)).results || []);
+  const ap = pagos.filter(p => p && p.status === "approved")[0];
+  if (!ap) return { pagado: false, estado: String((pagos[0] || {}).status || "") };
+  ref = limpiarRef(ap.external_reference);
+  const lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    const h = hoja(), x = buscarFila(h, ref), I = {}; COLUMNAS.forEach((k, i) => I[k] = i);
+    if (!x) return { pagado: false, estado: "sin pedido" };
+    if (Number(ap.transaction_amount || 0) + 0.5 < Number(x.f[I.total] || 0)) return { pagado: false, estado: "monto" };
+    if (!String(x.f[I.mp_pago] || "")) {
+      const neto = ((ap.transaction_details || {}).net_received_amount);
+      h.getRange(x.n, I.mp_pago + 1).setValue(JSON.stringify({ id: String(ap.id), monto: Number(ap.transaction_amount), neto: neto == null ? null : Number(neto),
+                                                                 fecha: String(ap.date_approved || ""), tipo: String(ap.payment_type_id || "") }));
+    }
+    return { pagado: true };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function avisoMp(e) {
+  try {
+    const q = e.parameter || {};
+    let d = {}; try { d = JSON.parse((e.postData || {}).contents || "{}"); } catch (err) {}
+    const tipo = String(d.type || q.type || q.topic || "");
+    const id = String((d.data || {}).id || q["data.id"] || q.id || "");
+    if (mpToken() && tipo.indexOf("payment") >= 0 && /^\d+$/.test(id)) mpRevisar("", id);
+  } catch (err) {}
+  return json({ ok: true });
+}
+
+function estadoMp(d) {
+  const ref = limpiarRef(d.ref);
+  if (ref.length < 8 || !mpToken()) return json({ ok: false, error: "Solicitud inválida." });
+  const cache = CacheService.getScriptCache(), k = "mp" + ref, n = Number(cache.get(k) || 0);
+  if (n >= 30) return json({ ok: false, error: "Espera un momento y vuelve a intentar." });
+  cache.put(k, String(n + 1), 3600);
+  try {
+    const h = hoja(), x = buscarFila(h, ref), I = {}; COLUMNAS.forEach((k2, i) => I[k2] = i);
+    if (!x) return json({ ok: false, error: "No encontramos tu pedido." });
+    if (String(x.f[I.mp_pago] || "")) return json({ ok: true, pagado: true });
+    const r = mpRevisar(ref, "");
+    return json({ ok: true, pagado: r.pagado, estado: r.estado });
+  } catch (err) {
+    return json({ ok: false, error: "No pudimos revisar el pago. Intenta en un momento." });
+  }
+}
+
+function pagosMpPendientes() {
+  const filas = hoja().getDataRange().getValues(), I = {}; COLUMNAS.forEach((k, i) => I[k] = i);
+  const salida = [];
+  for (let i = 1; i < filas.length; i++) {
+    if (!String(filas[i][I.mp_pago] || "") || String(filas[i][I.mp_avisado] || "")) continue;
+    let p = {}; try { p = JSON.parse(filas[i][I.mp_pago]); } catch (e) { continue; }
+    salida.push({ ref: String(filas[i][0]), pago: p });
+  }
+  return json({ ok: true, pagos: salida });
+}
+
+function marcarPagosMp(refs) {
+  const h = hoja(), filas = h.getDataRange().getValues(), I = {}; COLUMNAS.forEach((k, i) => I[k] = i);
+  const set = {}; refs.forEach(r => set[r] = true);
+  const ahora = Utilities.formatDate(new Date(), "America/Santiago", "yyyy-MM-dd HH:mm");
+  for (let i = 1; i < filas.length; i++) if (set[String(filas[i][0])]) h.getRange(i + 1, I.mp_avisado + 1).setValue(ahora);
   return json({ ok: true });
 }

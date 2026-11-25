@@ -298,7 +298,11 @@ function dibujarPaso3(ped, pago) {
   <div class="card" style="margin-top:12px"><div style="font-weight:600;font-size:16px;margin-bottom:6px">Resumen de tu pedido</div>
     ${ped.lineas.map((l) => `<div class="fila sm"><span>${l.cantidad} × ${esc(l.nombre)}</span><span>${peso(l.cantidad * l.precio)}</span></div>`).join("")}
     ${desp ? `<div class="fila sm"><span>🚗 Envío a ${esc(comuna)}</span><span>${coordinar ? "por coordinar" : envio ? peso(envio) : "sin costo"}</span></div>` : ""}
-    <hr><div class="fila"><span style="font-weight:600;font-size:16px">Total a transferir</span><span style="font-weight:700;font-size:20px">${peso(ped.total)}</span></div></div>
+    <hr><div class="fila"><span style="font-weight:600;font-size:16px">${c.mp ? "Total a pagar" : "Total a transferir"}</span><span style="font-weight:700;font-size:20px">${peso(ped.total)}</span></div></div>
+  ${c.mp ? `<div class="card" style="margin-top:12px;border:1.5px solid var(--pri)"><b style="font-size:16px">💳 Paga con tarjeta</b>
+    <div class="mut sm" style="margin-top:4px">Débito o crédito, con Mercado Pago. Se confirma al instante.</div>
+    <button class="btn g" id="pagomp" style="margin-top:10px;width:100%">Pagar ${peso(ped.total)} con tarjeta</button>
+    <div class="mut xs" style="margin-top:8px;text-align:center">o, si prefieres, transfiere:</div></div>` : ""}
   <div class="card" style="margin-top:12px"><div class="fila" style="justify-content:flex-start"><span class="mini">1</span><b style="font-size:16px">Transfiere ${peso(ped.total)}</b></div>
     ${filas.length ? `<button class="btn cp" id="cptodo">Copiar todos los datos</button>` + filas.map((f, i) => `<div class="dato"><div><div class="mut xs">${f[0]}</div><b>${esc(f[1])}</b></div></div>`).join("") : `<div class="mut sm" style="margin-top:6px">Te enviaremos los datos de transferencia por WhatsApp.</div>`}
     <div class="mut xs" style="padding-top:8px">Tu pedido queda <b>reservado por 2 horas</b>. Se confirma cuando recibimos la transferencia; si no la recibimos en ese plazo, lo liberamos.</div></div>
@@ -348,6 +352,7 @@ function dibujarPaso3(ped, pago) {
     pintarComp();
   }
   pintarComp();
+  const bm = $("#pagomp"); if (bm) bm.onclick = () => irAPagarMp(st.ref, bm);
   const b = $("#cptodo"); if (b) b.onclick = () => copiar(filas.map((f) => f[1]).join("\n"), "Datos copiados ✅ Pégalos en tu app del banco");
 }
 
@@ -399,6 +404,46 @@ async function enviar() {
 $("#atras").onclick = () => irA(1);
 $("#sig").onclick = () => { if (st.paso === 1) { if (totales()[1] > 0) irA(2); } else enviar(); };
 
+async function irAPagarMp(ref, boton) {
+  if (boton) { boton.disabled = true; boton.textContent = "Abriendo Mercado Pago…"; }
+  try {
+    const r = await fetch(window.API_URL, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" },
+      body: JSON.stringify({ accion: "mp_link", ref: ref, volver: location.origin + location.pathname }) });
+    const d = await r.json();
+    if (d.ok && d.pagado) { avisar("Este pedido ya está pagado ✅"); return; }
+    if (d.ok && d.url) { location.href = d.url; return; }
+    avisar(d.error || "No pudimos abrir el pago con tarjeta. Transfiere, por favor.");
+  } catch (e) { avisar("Sin conexión. Revisa tu internet e intenta de nuevo."); }
+  if (boton) { boton.disabled = false; boton.textContent = "Pagar con tarjeta"; }
+}
+
+// El cliente vuelve desde Mercado Pago a ?ref=...&mp=1: se pregunta al script si el pago quedó aprobado.
+async function volvioDeMp(ref) {
+  $("#sub").textContent = "Pago con tarjeta";
+  $("#barra").hidden = true;
+  const c = st.cat || {};
+  const wa = c.whatsapp ? `<a class="btn out" style="margin-top:12px" target="_blank" rel="noopener" href="https://wa.me/${waNum(c.whatsapp)}?text=${encodeURIComponent("Hola! Pagué con tarjeta mi pedido de alfajores y quiero confirmar.")}">💬 Escríbenos por WhatsApp</a>` : "";
+  $("#cuerpo").innerHTML = `<div class="card"><b>Revisando tu pago…</b><div class="mut sm" style="margin-top:6px">Un momento 🙏</div></div>`;
+  let d = {};
+  for (let i = 0; i < 4; i++) {
+    try { const r = await fetch(window.API_URL, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify({ accion: "estado_mp", ref: ref }) }); d = await r.json(); } catch (e) { d = {}; }
+    if (d.pagado) break;
+    await new Promise((ok) => setTimeout(ok, 2500));
+  }
+  if (d.pagado) {
+    $("#cuerpo").innerHTML = `<div class="card"><div style="background:#E4EBDF;color:var(--ok);border-radius:12px;padding:12px 14px"><b>✅ ¡Pago recibido!</b>
+      <div class="sm" style="margin-top:2px">Tu pedido quedó confirmado. Te escribimos por WhatsApp para coordinar el día y la hora de la entrega.</div></div></div>
+      <p class="mut sm" style="text-align:center">Puedes cerrar esta página. ¡Gracias por apoyar a Alfajores Vicencio! 🤎</p>`;
+  } else {
+    $("#cuerpo").innerHTML = `<div class="card"><b>Aún no vemos tu pago</b>
+      <div class="mut sm" style="margin-top:6px">${d.estado === "rejected" ? "Mercado Pago rechazó el pago. Puedes intentar con otra tarjeta." : "Si alcanzaste a pagar, puede tardar unos minutos en confirmarse."}</div>
+      <button class="btn g" id="reint" style="margin-top:12px">Pagar con tarjeta</button>
+      <button class="btn out" id="revisar">Volver a revisar</button>${wa}</div>`;
+    $("#reint").onclick = () => irAPagarMp(ref, $("#reint"));
+    $("#revisar").onclick = () => volvioDeMp(ref);
+  }
+}
+
 async function iniciar() {
   const sub = $("#sub");
   if (!window.API_URL) { sub.textContent = "Esta página aún no está conectada."; return; }
@@ -406,6 +451,8 @@ async function iniciar() {
     const r = await fetch(window.API_URL); const c = await r.json();
     if (!c.ok) throw new Error();
     st.cat = c;
+    const q = new URLSearchParams(location.search);
+    if (q.get("mp") && q.get("ref")) { volvioDeMp(q.get("ref").replace(/[^a-zA-Z0-9-]/g, "")); return; }
     if (!c.activo) {
       sub.textContent = "Pedidos de alfajores";
       $("#cuerpo").innerHTML = `<div class="card"><b>Por ahora no estamos tomando pedidos 🙏</b><div class="mut sm" style="margin-top:6px">Escríbenos por Instagram @alfajores_vicencio y te ayudamos.</div></div>`;
