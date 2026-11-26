@@ -108,7 +108,7 @@ const peso = (n) => "$" + Math.round(n).toLocaleString("es-CL");
 const esc = (t) => String(t ?? "").replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const BANDERA = '<svg viewBox="0 0 90 60"><rect width="90" height="60" fill="#fff"/><rect y="30" width="90" height="30" fill="#D52B1E"/><rect width="30" height="30" fill="#0039A6"/><polygon points="15,5 17.5,11.6 24.5,11.9 19,16.3 20.9,23.1 15,19.2 9.1,23.1 11,16.3 5.5,11.9 12.5,11.6" fill="#fff"/></svg>';
 const NOMBRES = ["Carrito", "Envío", "Pago"];
-const st = { paso: 1, cat: null, cant: {}, cajas: [], arma: null, medio: "", fecha: "", codigo: "", vista: "", entrega: "retiro", comuna: "", otra: "", direccion: "", ref: (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random().toString(36).slice(2)), enviando: false };
+const st = { paso: 1, cat: null, cant: {}, cajas: [], arma: null, medio: "", fecha: "", codigo: "", vista: "", programar: false, fechaProg: "", entrega: "retiro", comuna: "", otra: "", direccion: "", ref: (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random().toString(36).slice(2)), enviando: false };
 
 function avisar(t) { const a = $("#aviso"); a.textContent = t; a.style.display = "block"; clearTimeout(avisar.t); avisar.t = setTimeout(() => a.style.display = "none", 3200); }
 function sabor(n) { return String(n).trim().toLowerCase().replace(/^alfajor(es)?\s+(de\s+)?/, ""); }
@@ -230,7 +230,7 @@ function dibujarCajas() {
 }
 
 function dibujarPaso1() {
-  const c = st.cat, hayCajas = cajasCat().length > 0 && negroId() && blancoId();
+  const c = st.cat, hayCajas = cajasCat().length > 0 && negroId() && blancoId() && !campanaCerrada();
   if (!st.vista) st.vista = hayCajas ? "cajas" : "granel";
   const vista = hayCajas ? st.vista : "granel";
   const nSueltos = alfajores().reduce((a, p) => a + (st.cant[p.id] || 0), 0);
@@ -290,6 +290,10 @@ function textoCierre(c) {
 // "$1.000" o, si hay descuento, "$1.000 $1.200" con el normal tachado.
 function pctDesc(p) { return p.antes ? Math.round((1 - p.precio / p.antes) * 100) : 0; }
 function precioTxt(p) { return p.antes ? `${peso(p.precio)} <s style="opacity:.6;font-weight:400">${peso(p.antes)}</s> <span class="dcto">-${pctDesc(p)}%</span>` : peso(p.precio); }
+function hoyLocal() { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; }
+function sumarDiasLocal(f, n) { const d = fechaObj(f); d.setDate(d.getDate() + n); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; }
+// La campaña de Navidad terminó si hay agenda pero ya no quedan días: entonces no se ofrecen las cajas.
+function campanaCerrada() { const a = st.cat && st.cat.agenda; return !!(a && a.activo && !(a.dias || []).length); }
 function agendaActiva() { return !!(st.cat.agenda && st.cat.agenda.activo) && st.cajas.length > 0; }   // el día de entrega es solo para las Cajas de Navidad
 function diasPosibles() { const u = totales()[1]; return ((st.cat.agenda || {}).dias || []).filter((x) => x.libre >= u); }
 
@@ -297,7 +301,7 @@ function listaComunas(c) { c = c || []; return c.length > 1 ? c.slice(0, -1).joi
 function resumenPaso2() {   // resumen del pedido como en un carrito: subtotal, envío y total
   const el = $("#resumen"); if (!el) return;
   const [t] = totales(), e = envioActual(), desp = st.entrega === "despacho" && despachoActivo();
-  el.innerHTML = lineasActuales().filter((l) => !/^caja de navidad/i.test(l.nombre)).map((l) => `<div class="fila sm"><span>${l.cantidad} × ${esc(sabor(l.nombre))}</span><span>${peso(l.cantidad * l.precio)}</span></div>`).join("") +
+  el.innerHTML = lineasActuales().filter((l) => !/^caja de navidad/i.test(l.nombre)).map((l) => `<div class="fila sm"><span>${l.cantidad} × ${esc(nombreCorto(l.nombre))}</span><span>${peso(l.cantidad * l.precio)}</span></div>`).join("") +
     st.cajas.map((k) => `<div class="fila sm"><span>🎁 Caja de Navidad de ${k.tam} (${k.neg ? k.neg + " negro" + (k.neg > 1 ? "s" : "") : ""}${k.neg && k.bla ? " y " : ""}${k.bla ? k.bla + " blanco" + (k.bla > 1 ? "s" : "") : ""})</span><span>${peso((cajasCat().find((p) => p.id === k.cajaId) || {}).precio || 0)}</span></div>`).join("") +
     `<hr><div class="fila sm"><span class="mut">Subtotal</span><span>${peso(t)}</span></div>
      <div class="fila sm"><span class="mut">${desp ? "Entrega a domicilio" : "Entrega"}</span><span>${!desp ? "Gratis" : (e === null ? "por coordinar" : e ? peso(e) : "Gratis")}</span></div>
@@ -319,6 +323,11 @@ function dibujarPaso2() {
     ${diasPosibles().length ? `<div class="mut sm">Elige qué día quieres recibir tu pedido.</div><div class="dias" role="radiogroup">${diasPosibles().map((x) => { const d = fechaObj(x.fecha);
       return `<button data-f="${x.fecha}" class="${st.fecha === x.fecha ? "sel" : ""}">${DIAS[d.getDay()].slice(0, 3)}<b style="display:block;font-size:18px">${d.getDate()}</b><small>${MESES[d.getMonth()].slice(0, 3)}</small></button>`; }).join("")}</div><div class="sm" id="limite" style="margin-top:8px"></div>`
       : `<div class="sm" style="margin-top:4px">Ya no quedan días disponibles para este pedido 🙏</div><div class="mut sm" style="margin-top:4px">Escríbenos por WhatsApp o Instagram @alfajores_vicencio y vemos cómo ayudarte.</div>`}
+  </div>` : ""}
+  ${!agendaActiva() ? `<div class="card" style="margin-top:12px"><h2 class="tit">¿Cuándo lo quieres?</h2>
+    <label class="opc ${!st.programar ? "sel" : ""}" id="pr_no"><input type="radio" name="prog" value="no" ${!st.programar ? "checked" : ""}><div><b style="font-weight:600">Lo antes posible</b><div class="mut sm">Te escribimos por WhatsApp para coordinar el día y la hora.</div></div></label>
+    <label class="opc ${st.programar ? "sel" : ""}" id="pr_si"><input type="radio" name="prog" value="si" ${st.programar ? "checked" : ""}><div style="flex:1"><b style="font-weight:600">Programar para un día</b><div class="mut sm">Desde ${fechaLarga(sumarDiasLocal(hoyLocal(), 2))}.</div>
+      ${st.programar ? `<input type="date" id="fprog" min="${sumarDiasLocal(hoyLocal(), 2)}" max="${sumarDiasLocal(hoyLocal(), 60)}" value="${esc(st.fechaProg)}" style="margin-top:8px;width:100%;min-height:48px">` : ""}</div></label>
   </div>` : ""}
   <div class="card" style="margin-top:12px"><h2 class="tit">Método de envío</h2>
     <label class="opc ${st.entrega === "retiro" || !act ? "sel" : ""}" id="o_retiro"><input type="radio" name="ent" value="retiro" ${st.entrega === "retiro" || !act ? "checked" : ""}>
@@ -374,6 +383,8 @@ function dibujarPaso2() {
   document.querySelectorAll(".dias button").forEach((b) => b.onclick = () => { st.fecha = b.dataset.f;
     document.querySelectorAll(".dias button").forEach((x) => x.classList.toggle("sel", x === b)); limite(); });
   limite();
+  document.querySelectorAll('input[name="prog"]').forEach((r) => r.onchange = () => { st.programar = r.value === "si"; dibujarPaso2(); });
+  const fp = $("#fprog"); if (fp) fp.onchange = (e) => st.fechaProg = e.target.value;
   $("#nombre").oninput = (e) => st.nombre = e.target.value;
   $("#correo").oninput = (e) => st.correo = e.target.value.trim();
   ayuda();
@@ -436,10 +447,13 @@ function dibujarPaso3(ped, pago) {
     <div class="mut xs" style="padding-top:8px">Al terminar vuelves a esta página y el pago <b>se confirma al instante</b>.</div></div>`;
   const elegido = c.mp ? st.medio : "tef";
   $("#cuerpo").innerHTML = indicador() + `
-  <div class="card"><h2 class="tit">Pago${ped.codigo ? ` <span class="mut" style="font-size:15px;font-weight:400">· pedido #${esc(ped.codigo)}</span>` : ""}</h2><div class="mut sm">¡Gracias! Tu pedido${ped.codigo ? ` <b>#${esc(ped.codigo)}</b>` : ""} quedó anotado${ped.codigo ? " y te enviamos un correo con el resumen" : ""}. ${c.mp ? "Elige cómo quieres pagar:" : "Solo faltan 3 cosas:"}</div>
-    ${st.compOk ? "" : `<button class="btn sec" id="cambiar" style="height:40px;margin-top:10px;padding:0 14px;font-size:14px">← Cambiar mi pedido</button>`}</div>
+  ${st.totalEsperado && Math.round(st.totalEsperado) !== Math.round(ped.total) ? `<div class="card sm" style="border-color:var(--pri);background:#F6EDE6">Los precios se actualizaron mientras armabas tu pedido. El total final es <b>${peso(ped.total)}</b>.</div>` : ""}
+  <div class="card" style="${st.totalEsperado && Math.round(st.totalEsperado) !== Math.round(ped.total) ? "margin-top:12px" : ""}"><h2 class="tit">Pago${ped.codigo ? ` <span class="mut" style="font-size:15px;font-weight:400">· pedido #${esc(ped.codigo)}</span>` : ""}</h2><div class="mut sm">¡Gracias! Tu pedido${ped.codigo ? ` <b>#${esc(ped.codigo)}</b>` : ""} quedó anotado${ped.codigo ? " y te enviamos un correo con el resumen" : ""}. ${c.mp ? "Elige cómo quieres pagar:" : "Solo faltan 3 cosas:"}</div>
+    ${st.compOk || st.desdeCorreo ? "" : `<button class="btn sec" id="cambiar" style="height:40px;margin-top:10px;padding:0 14px;font-size:14px">← Cambiar mi pedido</button>`}</div>
   <div class="card" style="margin-top:12px"><div style="font-weight:600;font-size:16px;margin-bottom:6px">Resumen de tu pedido</div>
-    ${ped.lineas.map((l) => `<div class="fila sm"><span>${l.cantidad} × ${esc(l.nombre)}</span><span>${peso(l.cantidad * l.precio)}</span></div>`).join("")}
+    ${ped.lineas.map((l) => /^caja de navidad/i.test(l.nombre) && st.cajas.length
+      ? st.cajas.filter((k) => k.cajaId === l.producto_id).map((k) => `<div class="fila sm"><span>🎁 Caja de ${k.tam} (${sabTxt(k)})</span><span>${peso(l.precio)}</span></div>`).join("")
+      : `<div class="fila sm"><span>${l.cantidad} × ${esc(/^caja de navidad/i.test(l.nombre) ? "🎁 " + l.nombre : nombreCorto(l.nombre))}</span><span>${peso(l.cantidad * l.precio)}</span></div>`).join("")}
     ${ped.fecha_entrega ? `<div class="fila sm"><span>📅 Entrega</span><span><b>${fechaLarga(ped.fecha_entrega)}</b></span></div>` : ""}
     ${desp ? `<div class="fila sm"><span>🚗 Envío a ${esc(comuna)}</span><span>${coordinar ? "por coordinar" : envio ? peso(envio) : "sin costo"}</span></div>` : ""}
     <hr><div class="fila"><span style="font-weight:600;font-size:16px">Total a pagar</span><span style="font-weight:700;font-size:20px">${peso(ped.total)}</span></div></div>
@@ -457,7 +471,7 @@ function dibujarPaso3(ped, pago) {
     ${desp ? `<div class="sm" style="margin-top:4px">🚗 A domicilio: ${esc(dir)}, ${esc(comuna)}</div>` : `<div class="sm" style="margin-top:4px">🚇 Metro Escuela Militar</div>`}
     <div class="mut sm" style="margin-top:4px">Apenas ${elegido === "mp" ? "se confirme tu pago" : "recibamos tu comprobante"}, <b>te escribimos por WhatsApp</b> para coordinar ${ped.fecha_entrega ? "la hora" : "el día y la hora"} de la entrega.</div></div>` : ""}
   ${c.whatsapp ? `<a class="btn out" style="margin-top:12px" target="_blank" rel="noopener" href="https://wa.me/${waNum(c.whatsapp)}?text=${encodeURIComponent("Hola! Tengo una consulta sobre mi pedido de " + frase(ped.lineas) + ".")}">💬 Tengo una consulta</a>` : ""}
-  <p class="mut sm" style="text-align:center">Puedes cerrar esta página. ¡Gracias por apoyar a Alfajores Vicencio! 🤎</p>`;
+  <p class="mut sm" style="text-align:center">${st.compOk ? "Puedes cerrar esta página." : "Si necesitas cerrar esta página, en tu correo tienes el botón para volver a pagar."} ¡Gracias por apoyar a Alfajores Vicencio! 🤎</p>`;
   document.querySelectorAll('input[name="medio"]').forEach((r) => r.onchange = () => { st.medio = r.value; dibujarPaso3(ped, pago); });
   // Paso 2: el cliente adjunta la captura o foto de su comprobante (se reduce en el teléfono y se guarda en la nube hasta que el ERP la baja).
   const wa = c.whatsapp
@@ -500,14 +514,18 @@ function dibujarPaso3(ped, pago) {
   }
   pintarComp();
   const bm = $("#pagomp"); if (bm) bm.onclick = () => irAPagarMp(st.ref, bm);
-  const cb = $("#cambiar"); if (cb) cb.onclick = () => {   // vuelve a editar: el pedido anterior sin pagar se libera solo (reserva de 2 horas)
+  const cb = $("#cambiar"); if (cb) cb.onclick = () => {   // vuelve a editar: el pedido anterior se anula y se arma uno nuevo
+    if (st.compOk) return;
+    const viejo = st.ref;
     st.ref = crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random().toString(36).slice(2);
-    if (st.compOk) return; st.medio = ""; st.comp = null; irA(2);
+    fetch(window.API_URL, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify({ accion: "anular", ref: viejo }) }).catch(() => {});
+    st.medio = ""; st.comp = null; st.totalEsperado = 0; irA(2);
   };
   const b = $("#cptodo"); if (b) b.onclick = () => copiar(filas.map((f) => f[1]).join("\n"), "Datos copiados ✅ Pégalos en tu app del banco");
 }
 
 // "Tu pedido": siempre visible en el paso 1, con todo lo que lleva y cómo quitarlo.
+function nombreCorto(n) { return /negro/i.test(n) ? "Negro" : /blanco/i.test(n) ? "Blanco" : sabor(n); }
 function sabTxt(k) { return [k.neg ? k.neg + " negro" + (k.neg > 1 ? "s" : "") : "", k.bla ? k.bla + " blanco" + (k.bla > 1 ? "s" : "") : ""].filter(Boolean).join(" y "); }
 function quitarCaja(i) {
   const k = st.cajas.splice(i, 1)[0];
@@ -562,6 +580,11 @@ async function enviar() {
   if (!/^[^@\s]+@[^@\s]+\.[^@\s]{2,}$/.test((st.correo || "").trim())) { avisar("Escribe un correo válido, por ejemplo nombre@gmail.com."); return; }
   const fg = faltaGranel();
   if (fg && !(st.entrega === "despacho" && despachoActivo())) { avisar(`Para retiro gratis en el metro, el mínimo es de ${st.cat.minimo_granel || 4} alfajores. Agrega ${fg} más o elige entrega a domicilio.`); return; }
+  if (!agendaActiva() && st.programar) {
+    const f = st.fechaProg, min = sumarDiasLocal(hoyLocal(), 2), max = sumarDiasLocal(hoyLocal(), 60);
+    if (!f) { avisar("Elige el día para programar tu pedido, o marca «Lo antes posible»."); return; }
+    if (f < min || f > max) { avisar(`Puedes programar desde el ${fechaLarga(min)}.`); return; }
+  }
   if (agendaActiva()) {
     if (!diasPosibles().length) { avisar("Ya no quedan días disponibles para este pedido. Escríbenos por WhatsApp."); return; }
     if (!st.fecha) { avisar("Elige el día de entrega."); return; }
@@ -575,7 +598,8 @@ async function enviar() {
   try {
     const r = await fetch(window.API_URL, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" },
       body: JSON.stringify({ accion: "pedido", ref: st.ref, nombre: st.nombre, telefono: tel, correo: (st.correo || "").trim(), nota: st.cajas.length ? "#C " + st.cajas.map((k) => `${k.cajaId}=${negroId()}:${k.neg},${blancoId()}:${k.bla}`).join(";") : "", cantidades: st.cant,
-        fecha_entrega: agendaActiva() ? st.fecha : "", codigo: st.codigo || "",
+        esperado: (st.totalEsperado = totales()[0] + (envioActual() || 0)),
+        fecha_entrega: agendaActiva() ? st.fecha : (st.programar ? st.fechaProg : ""), codigo: st.codigo || "",
         entrega: despachoActivo() ? st.entrega : "retiro", comuna: comunaElegida(), direccion: [st.direccion || "", (st.depto || "").trim()].filter(Boolean).join(", "), trampa: ($("#trampa") || {}).value || "" }) });
     const d = await r.json();
     st.enviando = false;
@@ -640,6 +664,16 @@ async function volvioDeMp(ref) {
   }
 }
 
+// Link "Pagar mi pedido" del correo: vuelve al paso de pago de ese pedido.
+async function pagarDespues(ref) {
+  $("#cuerpo").innerHTML = `<div class="card"><b>Buscando tu pedido…</b></div>`;
+  let d = {};
+  try { const r = await fetch(window.API_URL, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify({ accion: "ver_pedido", ref: ref }) }); d = await r.json(); } catch (e) {}
+  if (!d.ok) { $("#cuerpo").innerHTML = `<div class="card"><b>${esc(d.error || "No pudimos cargar tu pedido.")}</b><div class="mut sm" style="margin-top:6px">Escríbenos por WhatsApp y te ayudamos.</div><a class="btn g" style="margin-top:12px" href="${location.pathname}">Hacer un pedido nuevo</a></div>`; $("#barra").hidden = true; return; }
+  if (d.pagado) { $("#cuerpo").innerHTML = `<div class="card"><div style="background:#E4EBDF;color:var(--ok);border-radius:12px;padding:12px 14px"><b>✅ Este pedido ya está pagado</b><div class="sm" style="margin-top:2px">Te escribimos por WhatsApp para coordinar la entrega.</div></div></div>`; $("#barra").hidden = true; return; }
+  st.ref = ref; st.desdeCorreo = true; st.nombre = d.pedido.nombre; st.paso = 3; barra(); dibujarPaso3(d.pedido, d.pago || {});
+}
+
 async function iniciar() {
   const sub = $("#sub");
   if (!window.API_URL) { sub.textContent = "Esta página aún no está conectada."; return; }
@@ -649,6 +683,7 @@ async function iniciar() {
     st.cat = c;
     const q = new URLSearchParams(location.search);
     if (q.get("mp") && q.get("ref")) { volvioDeMp(q.get("ref").replace(/[^a-zA-Z0-9-]/g, "")); return; }
+    if (q.get("pagar")) { pagarDespues(q.get("pagar").replace(/[^a-zA-Z0-9-]/g, "")); return; }
     if (!c.activo) {
       sub.textContent = "Pedidos de alfajores";
       $("#cuerpo").innerHTML = `<div class="card"><b>Por ahora no estamos tomando pedidos 🙏</b><div class="mut sm" style="margin-top:6px">Escríbenos por Instagram @alfajores_vicencio y te ayudamos.</div></div>`;

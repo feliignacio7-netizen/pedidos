@@ -5,7 +5,7 @@
  * (Este archivo se carga solo desde el cargador de Apps Script; la clave TOKEN la aporta el cargador.)
  */
 const HOJA = "Pedidos";
-const COLUMNAS = ["ref", "creado", "nombre", "telefono", "nota", "lineas", "total", "importado", "entrega", "comuna", "direccion", "envio", "correo", "mp_link", "mp_pago", "mp_avisado", "fecha_entrega", "correos"];
+const COLUMNAS = ["ref", "creado", "nombre", "telefono", "nota", "lineas", "total", "importado", "entrega", "comuna", "direccion", "envio", "correo", "mp_link", "mp_pago", "mp_avisado", "fecha_entrega", "correos", "anulado", "anulado_avisado"];
 const HOJA_OP = "Opiniones";
 const COL_OP = ["ref", "creado", "estrellas", "comentario", "importado"];
 const HOJA_COMP = "Comprobantes";
@@ -60,6 +60,8 @@ function doPost(e) {
   if (d.accion === "amigo") return validarAmigo(d);
   if (d.accion === "opinion") return guardarOpinion(d);
   if (d.accion === "comprobante") return guardarComprobante(d);
+  if (d.accion === "ver_pedido") return verPedido(d);
+  if (d.accion === "anular") return anularPedido(d);
   if (d.token !== TOKEN) return json({ ok: false, error: "No autorizado." });
   if (d.accion === "publicar") {
     const props = PropertiesService.getScriptProperties();
@@ -76,6 +78,8 @@ function doPost(e) {
   if (d.accion === "pagos_mp") return pagosMpPendientes();
   if (d.accion === "marcar_pagos_mp") return marcarPagosMp(d.refs || []);
   if (d.accion === "correo") return correoDesdeErp(d);
+  if (d.accion === "anulados") return anuladosPendientes();
+  if (d.accion === "marcar_anulados") return marcarAnulados(d.refs || []);
   if (d.accion === "marcar_comprobantes") return marcarComprobantes(d.refs || []);
   return json({ ok: false, error: "Acción desconocida." });
 }
@@ -129,7 +133,13 @@ function crearPedido(d) {
     if (retiro && sueltos === unidades && sueltos < MINIMO_GRANEL) return json({ ok: false, error: "Para retiro gratis en el metro, el mínimo es de " + MINIMO_GRANEL + " alfajores." });
     let fechaEntrega = "";
     const conCajas = lineas.some(l => (catalogo[l.producto_id] || {}).navidad);
-    if (c.agenda && c.agenda.desde && conCajas) {   // el día de entrega (con cupo) es solo para pedidos con Cajas de Navidad
+    const pedida = String(d.fecha_entrega || "").substring(0, 10);
+    const enCampana = c.agenda && c.agenda.desde && pedida >= String(c.agenda.desde) && pedida <= String(c.agenda.hasta);
+    if (!conCajas && pedida && !enCampana) {   // granel programado fuera de la campaña: desde 2 días después y hasta 60 días
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(pedida) || pedida < sumarDias(hoySantiago(), DIAS_MIN_PROGRAMAR) || pedida > sumarDias(hoySantiago(), 60))
+        return json({ ok: false, error: "Elige una fecha desde " + DIAS_MIN_PROGRAMAR + " días después de hoy." });
+      fechaEntrega = pedida;
+    } else if (c.agenda && c.agenda.desde && (conCajas || enCampana)) {   // Cajas de Navidad, o granel en días de campaña: días con cupo
       fechaEntrega = String(d.fecha_entrega || "").substring(0, 10);
       if (!fechaEntrega) return json({ ok: false, error: "Elige el día de entrega." });
       const dia = diasDisponibles(c, filas).filter(x => x.fecha === fechaEntrega)[0];
@@ -162,7 +172,7 @@ function pendientes() {
   const filas = hoja().getDataRange().getValues();
   const salida = [];
   for (let i = 1; i < filas.length; i++) {
-    if (String(filas[i][7]).trim() !== "") continue;
+    if (String(filas[i][7]).trim() !== "" || String(filas[i][18] || "").trim() !== "") continue;   // ya importado o anulado
     salida.push({ ref: String(filas[i][0]), creado: String(filas[i][1]), nombre: filas[i][2], telefono: String(filas[i][3]).replace(/\D/g, ""),
                   nota: filas[i][4], lineas: JSON.parse(filas[i][5]), total: filas[i][6],
                   entrega: String(filas[i][8] || "retiro"), comuna: String(filas[i][9] || ""), direccion: String(filas[i][10] || ""),
@@ -452,6 +462,7 @@ function marcarPagosMp(refs) {
 }
 
 // ---------- Precios por fecha, código amigo y días de entrega con cupo ----------
+const DIAS_MIN_PROGRAMAR = 2;   // un pedido a granel se puede programar desde 2 días después de hoy
 const MINIMO_GRANEL = 4;   // retiro gratis sin cajas: al menos 4 alfajores sueltos (con despacho pagado no hay mínimo)
 function hoySantiago() { return Utilities.formatDate(new Date(), "America/Santiago", "yyyy-MM-dd"); }
 
@@ -526,7 +537,7 @@ function diasDisponibles(c, filas) {
   const I = {}; COLUMNAS.forEach((k, i) => I[k] = i);
   for (let i = 1; i < filas.length; i++) {
     const f = String(filas[i][I.fecha_entrega] || "").replace(/^'/, "").substring(0, 10);
-    if (!f || conocidos[String(filas[i][0])]) continue;
+    if (!f || conocidos[String(filas[i][0])] || String(filas[i][I.anulado] || "")) continue;
     let ls = []; try { ls = JSON.parse(filas[i][I.lineas]); } catch (e) {}
     ocupado[f] = (ocupado[f] || 0) + unidadesDe(ls, catalogo);
   }
@@ -555,7 +566,7 @@ function fechaBonita(f) {
 function escH(t) { return String(t || "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
 
 const TEXTOS_CORREO = {
-  recibido: { asunto: "Recibimos tu pedido", titulo: "¡Recibimos tu pedido!", texto: "Tu pedido quedó anotado. Si aún no pagas, puedes hacerlo con tarjeta o transferencia desde la página; con transferencia lo reservamos por 2 horas." },
+  recibido: { asunto: "Recibimos tu pedido", titulo: "¡Recibimos tu pedido!", texto: "Tu pedido quedó anotado. Si aún no pagas, puedes hacerlo con tarjeta o transferencia con el botón de abajo. Lo reservamos por 2 horas; si no recibimos el pago, se libera." },
   pagado: { asunto: "Pago confirmado", titulo: "Pago confirmado ✅", texto: "Recibimos tu pago. Tu pedido está confirmado y te escribiremos por WhatsApp para coordinar la hora de entrega." },
   listo: { asunto: "Tu pedido está listo", titulo: "Tu pedido está listo 🎁", texto: "Ya está listo para retirar en el metro Escuela Militar. Coordinamos la hora por WhatsApp." },
   en_camino: { asunto: "Tu pedido va en camino", titulo: "Tu pedido va en camino 🚗", texto: "Salió hacia tu dirección. Te avisaremos por WhatsApp al llegar." },
@@ -569,7 +580,8 @@ function cuerpoCorreo(f, I, tipo) {
   const envio = Number(f[I.envio] || 0), desp = String(f[I.entrega]) === "despacho";
   const dia = fechaBonita(f[I.fecha_entrega]);
   const entrega = desp ? `🚗 Despacho a ${escH(f[I.direccion])}, ${escH(f[I.comuna])}` : "🚇 Retiro en metro Escuela Militar";
-  const boton = tipo === "entregado" ? `<p style="text-align:center;margin:24px 0"><a href="${PAGINA}/opinion.html?p=${encodeURIComponent(ref)}" style="background:#BC7B69;color:#2A1A12;text-decoration:none;padding:12px 22px;border-radius:999px;font-weight:600">Dejar mi opinión</a></p>` : "";
+  const pagar = tipo === "recibido" && !String(f[I.mp_pago] || "") ? `<p style="text-align:center;margin:24px 0"><a href="${PAGINA}/?pagar=${encodeURIComponent(ref)}" style="background:#BC7B69;color:#2A1A12;text-decoration:none;padding:12px 22px;border-radius:999px;font-weight:600">Pagar mi pedido</a></p>` : "";
+  const boton = pagar || (tipo === "entregado" ? `<p style="text-align:center;margin:24px 0"><a href="${PAGINA}/opinion.html?p=${encodeURIComponent(ref)}" style="background:#BC7B69;color:#2A1A12;text-decoration:none;padding:12px 22px;border-radius:999px;font-weight:600">Dejar mi opinión</a></p>` : "");
   return `<div style="background:#F3EEE6;padding:24px 12px;font-family:Helvetica,Arial,sans-serif;color:#2A1A12">
 <div style="max-width:520px;margin:0 auto;background:#fff;border-radius:16px;padding:28px 24px">
 <p style="text-align:center;letter-spacing:6px;font-family:Georgia,serif;font-size:22px;margin:0">VICENCIO</p>
@@ -611,4 +623,52 @@ function correoDesdeErp(d) {
   if (!x) return json({ ok: false, error: "Pedido no encontrado en la nube." });
   const r = enviarCorreo(h, x.n, String(d.tipo || ""));
   return json({ ok: r === "ok" || r === "ya enviado" || r === "sin correo", resultado: r, error: r });
+}
+
+// ---------- Pagar después (link del correo) y anular al volver a editar ----------
+function filaAPedido(f, I) {
+  let lineas = []; try { lineas = JSON.parse(f[I.lineas] || "[]"); } catch (e) {}
+  return { ref: String(f[0]), codigo: codigoCorto(f[0]), nombre: String(f[I.nombre]), lineas: lineas, total: Number(f[I.total] || 0),
+           entrega: String(f[I.entrega] || "retiro"), comuna: String(f[I.comuna] || ""), direccion: String(f[I.direccion] || ""),
+           envio: Number(f[I.envio] || 0), fecha_entrega: String(f[I.fecha_entrega] || "").replace(/^'/, "") };
+}
+
+function verPedido(d) {
+  const ref = limpiarRef(d.ref);
+  if (ref.length < 8) return json({ ok: false, error: "Pedido no encontrado." });
+  const h = hoja(), x = buscarFila(h, ref), I = {}; COLUMNAS.forEach((k, i) => I[k] = i);
+  if (!x || String(x.f[I.anulado] || "")) return json({ ok: false, error: "No encontramos este pedido. Si lo cambiaste, revisa el correo del pedido nuevo." });
+  const c = leerCfg();
+  return json({ ok: true, pagado: !!String(x.f[I.mp_pago] || ""), pedido: filaAPedido(x.f, I), pago: c.pago || {} });
+}
+
+function anularPedido(d) {
+  const ref = limpiarRef(d.ref);
+  const lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    const h = hoja(), x = buscarFila(h, ref), I = {}; COLUMNAS.forEach((k, i) => I[k] = i);
+    if (!x) return json({ ok: true });
+    if (String(x.f[I.mp_pago] || "")) return json({ ok: false, error: "Este pedido ya está pagado." });
+    if (!String(x.f[I.anulado] || "")) h.getRange(x.n, I.anulado + 1).setValue(Utilities.formatDate(new Date(), "America/Santiago", "yyyy-MM-dd HH:mm"));
+    return json({ ok: true });
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+// El ERP pregunta qué pedidos ya importados se anularon (el cliente volvió a editarlo), para pasarlos a Cancelado.
+function anuladosPendientes() {
+  const filas = hoja().getDataRange().getValues(), I = {}; COLUMNAS.forEach((k, i) => I[k] = i), salida = [];
+  for (let i = 1; i < filas.length; i++)
+    if (String(filas[i][I.anulado] || "") && !String(filas[i][I.anulado_avisado] || "")) salida.push(String(filas[i][0]));
+  return json({ ok: true, refs: salida });
+}
+
+function marcarAnulados(refs) {
+  const h = hoja(), filas = h.getDataRange().getValues(), I = {}; COLUMNAS.forEach((k, i) => I[k] = i);
+  const set = {}; refs.forEach(r => set[r] = true);
+  const ahora = Utilities.formatDate(new Date(), "America/Santiago", "yyyy-MM-dd HH:mm");
+  for (let i = 1; i < filas.length; i++) if (set[String(filas[i][0])]) h.getRange(i + 1, I.anulado_avisado + 1).setValue(ahora);
+  return json({ ok: true });
 }
