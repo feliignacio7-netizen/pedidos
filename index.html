@@ -149,7 +149,7 @@ function indicador() {
 function dibujarCajas() {
   const el = $("#navidad"); if (!el) return;
   const cj = cajasCat(), a = st.arma;
-  const tams = `<div class="tam">${cj.map((p) => `<button data-t="${p.navidad}" class="${a && a.tam === p.navidad ? "sel" : ""}"><span style="font-size:18px">${p.navidad}</span> <small style="font-weight:500">alfajores</small><br><small style="font-weight:400">${peso(p.precio)}</small></button>`).join("")}</div>`;
+  const tams = `<div class="tam">${cj.map((p) => `<button data-t="${p.navidad}" class="${a && a.tam === p.navidad ? "sel" : ""}"><span style="font-size:18px">${p.navidad}</span> <small style="font-weight:500">alfajores</small><br><small style="font-weight:400">${precioTxt(p)}</small></button>`).join("")}</div>`;
   let cuerpo = "";
   if (a) {
     const c = cj.find((p) => p.navidad === a.tam), falta = a.tam - a.neg - a.bla;
@@ -187,14 +187,15 @@ function dibujarPaso1() {
   const precioMin = Math.min(...cajasCat().map((p) => p.precio).concat([Infinity]));
   const unidad = (alfajores()[0] || {}).precio || 0;
   $("#cuerpo").innerHTML = indicador() + `
-  ${c.preventa_hasta && !st.codigo ? `<div class="banda">✨ Precio preventa hasta el <b>${fechaLarga(c.preventa_hasta)}</b></div>` : ""}
+  ${st.codigo ? `<div class="banda">🤝 Precio especial con código</div>`
+    : c.preventa_hasta && c.productos.some((p) => p.antes) ? `<div class="banda">🔥 <b>Descuento Cyber</b>: alfajor a ${peso(unidad)} <s style="opacity:.7">${peso((alfajores()[0] || {}).antes || 0)}</s> hasta el <b>${fechaLarga(c.preventa_hasta)}</b></div>` : ""}
   ${hayCajas ? `<div class="seg" role="tablist">
-    <button data-v="cajas" class="${vista === "cajas" ? "sel" : ""}" role="tab">🎁 Cajas de Navidad<small>${st.cajas.length ? st.cajas.length + " en tu pedido" : "desde " + peso(precioMin)}</small></button>
-    <button data-v="granel" class="${vista === "granel" ? "sel" : ""}" role="tab">Alfajores a granel<small>${nSueltos ? nSueltos + " en tu pedido" : peso(unidad) + " c/u"}</small></button>
+    <button data-v="cajas" class="${vista === "cajas" ? "sel" : ""}" role="tab">🎁 Cajas de Navidad<small>${st.cajas.length ? st.cajas.length + " en tu pedido" : "desde " + precioTxt(cajasCat().reduce((a, p) => (!a || p.precio < a.precio ? p : a), null) || {})}</small></button>
+    <button data-v="granel" class="${vista === "granel" ? "sel" : ""}" role="tab">Alfajores a granel<small>${nSueltos ? nSueltos + " en tu pedido" : precioTxt(alfajores()[0] || {}) + " c/u"}</small></button>
   </div>` : ""}
   ${vista === "cajas" ? `<div class="card nav" id="navidad" style="margin-top:12px"></div>` : `
   <div class="card" style="margin-top:12px"><h2 class="tit">Alfajores a granel</h2><div class="mut xs">Toca + para sumar. Para retiro gratis en el metro, mínimo ${c.minimo_granel || 4} alfajores.</div>
-    ${alfajores().map((p) => `<div class="fila prod"><div><div style="font-weight:500;font-size:16px">${/negro/i.test(p.nombre) ? "⚫" : "⚪"} ${esc(p.nombre)}</div><div class="mut sm">${peso(p.precio)} c/u</div></div>
+    ${alfajores().map((p) => `<div class="fila prod"><div><div style="font-weight:500;font-size:16px">${/negro/i.test(p.nombre) ? "⚫" : "⚪"} ${esc(p.nombre)}</div><div class="mut sm">${precioTxt(p)} c/u</div></div>
       <div class="cant"><button data-id="${p.id}" data-d="-1" aria-label="Quitar">−</button><span class="num" id="n${p.id}">${st.cant[p.id] || 0}</span><button class="mas" data-id="${p.id}" data-d="1" aria-label="Sumar">+</button></div></div>`).join("")}
   </div>`}
   <div class="card sm" id="falta1" style="margin-top:12px;border-color:var(--pri);background:#F6EDE6" hidden></div>
@@ -215,8 +216,8 @@ async function aplicarCodigo() {
     const r = await fetch(window.API_URL, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify({ accion: "amigo", codigo: codigo }) });
     const d = await r.json();
     if (!d.ok) { avisar(d.error || "Ese código no es válido."); return; }
-    const pr = {}; (d.productos || []).forEach((p) => pr[p.id] = p.precio);
-    st.cat.productos.forEach((p) => { if (pr[p.id]) p.precio = pr[p.id]; });
+    const pr = {}; (d.productos || []).forEach((p) => pr[p.id] = p);
+    st.cat.productos.forEach((p) => { const n = pr[p.id]; if (n) { p.precio = n.precio; if (n.antes) p.antes = n.antes; else delete p.antes; } });
     st.codigo = codigo; dibujarPaso1(); barra(); avisar("✓ Código aplicado");
   } catch (e) { avisar("Sin conexión. Intenta de nuevo."); }
 }
@@ -234,6 +235,8 @@ function textoCierre(c) {
     return `⏳ Para este día <b>cierra en ${hrs ? hrs + " h " : ""}${hrs ? "" : min + " min"}</b>`; }
   return `⏳ Para este día, pide hasta el <b>${fechaLarga(f)} a las ${h}</b>`;
 }
+// "$1.000" o, si hay descuento, "$1.000 $1.200" con el normal tachado.
+function precioTxt(p) { return p.antes ? `${peso(p.precio)} <s style="opacity:.6;font-weight:400">${peso(p.antes)}</s>` : peso(p.precio); }
 function agendaActiva() { return !!(st.cat.agenda && st.cat.agenda.activo); }
 function diasPosibles() { const u = totales()[1]; return ((st.cat.agenda || {}).dias || []).filter((x) => x.libre >= u); }
 

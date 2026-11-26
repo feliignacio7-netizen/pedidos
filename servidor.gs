@@ -463,6 +463,11 @@ function precioDe(p, amigo) {
 
 function publico(p, amigo) {
   const x = { id: p.id, nombre: p.nombre, precio: precioDe(p, amigo) };
+  // Precio normal para mostrar tachado: el de hoy sin código o el próximo programado, si es mayor (descuento Cyber / código).
+  const hoy = hoySantiago(), normalHoy = precioDe(p, false);
+  let antes = amigo ? normalHoy : 0;
+  (p.tramos || []).forEach(t => { if (String(t.desde) > hoy && Number(t.precio) > antes) antes = Number(t.precio); });
+  if (antes > x.precio) x.antes = antes;
   if (p.navidad) x.navidad = p.navidad;
   return x;
 }
