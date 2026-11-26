@@ -67,6 +67,7 @@ select{width:100%;font:inherit;font-size:16px;color:var(--fg);background:var(--s
 .seg button.sel{border-color:var(--pri);background:#F6EDE6;box-shadow:inset 0 0 0 1px var(--pri)}
 .atajos{display:flex;gap:6px;flex-wrap:wrap;margin:8px 0 2px}
 .atajos button{min-height:40px;padding:0 12px;border-radius:999px;border:1px solid var(--bor2);background:var(--sup);color:var(--fg);font:inherit;font-size:14px;cursor:pointer;touch-action:manipulation}
+.dcto{display:inline-block;background:var(--pri);color:var(--fg);font-size:11px;font-weight:700;padding:1px 6px;border-radius:999px;vertical-align:1px;white-space:nowrap}
 .banda{margin-top:10px;padding:10px 14px;border-radius:12px;background:var(--fg);color:var(--bg);font-size:14px;text-align:center}
 .dias{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
 .dias button{min-height:48px;min-width:88px;padding:6px 10px;border-radius:12px;border:1.5px solid var(--bor2);background:var(--sup);color:var(--fg);font:inherit;cursor:pointer;line-height:1.15;touch-action:manipulation}
@@ -187,9 +188,9 @@ function dibujarPaso1() {
   const precioMin = Math.min(...cajasCat().map((p) => p.precio).concat([Infinity]));
   const unidad = (alfajores()[0] || {}).precio || 0;
   $("#cuerpo").innerHTML = indicador() + `
-  ${st.codigo ? `<div class="banda">🤝 Precio especial con código</div>`
-    : (alfajores()[0] || {}).antes ? `<div class="banda">🔥 <b>Descuento Cyber</b>: alfajor a ${peso(unidad)} <s style="opacity:.7">${peso(alfajores()[0].antes)}</s>${alfajores()[0].hasta ? ` hasta el <b>${fechaLarga(alfajores()[0].hasta)}</b>` : ""}</div>`
-    : (alfajores()[0] || {}).luego ? `<div class="banda">🔥 <b>Cyber</b> desde el <b>${fechaLarga(alfajores()[0].luego.desde)}</b>${alfajores()[0].luego.hasta ? ` al ${fechaLarga(alfajores()[0].luego.hasta)}` : ""}: alfajor a ${peso(alfajores()[0].luego.precio)}</div>` : ""}
+  ${st.codigo ? `<div class="banda">🤝 Precio especial con código${(alfajores()[0] || {}).antes ? ` · <b>-${pctDesc(alfajores()[0])}%</b>` : ""}</div>`
+    : (alfajores()[0] || {}).antes ? `<div class="banda">🔥 <b>Cyber -${pctDesc(alfajores()[0])}%</b>: alfajor a ${peso(unidad)} <s style="opacity:.7">${peso(alfajores()[0].antes)}</s>${alfajores()[0].hasta ? ` hasta el <b>${fechaLarga(alfajores()[0].hasta)}</b>` : ""}</div>`
+    : (alfajores()[0] || {}).luego ? `<div class="banda">🔥 <b>Cyber</b> desde el <b>${fechaLarga(alfajores()[0].luego.desde)}</b>${alfajores()[0].luego.hasta ? ` al ${fechaLarga(alfajores()[0].luego.hasta)}` : ""}: alfajor a ${peso(alfajores()[0].luego.precio)} (<b>-${Math.round((1 - alfajores()[0].luego.precio / alfajores()[0].precio) * 100)}%</b>)</div>` : ""}
   ${hayCajas ? `<div class="seg" role="tablist">
     <button data-v="cajas" class="${vista === "cajas" ? "sel" : ""}" role="tab">🎁 Cajas de Navidad<small>${st.cajas.length ? st.cajas.length + " en tu pedido" : "desde " + precioTxt(cajasCat().reduce((a, p) => (!a || p.precio < a.precio ? p : a), null) || {})}</small></button>
     <button data-v="granel" class="${vista === "granel" ? "sel" : ""}" role="tab">Alfajores a granel<small>${nSueltos ? nSueltos + " en tu pedido" : precioTxt(alfajores()[0] || {}) + " c/u"}</small></button>
@@ -237,7 +238,8 @@ function textoCierre(c) {
   return `⏳ Para este día, pide hasta el <b>${fechaLarga(f)} a las ${h}</b>`;
 }
 // "$1.000" o, si hay descuento, "$1.000 $1.200" con el normal tachado.
-function precioTxt(p) { return p.antes ? `${peso(p.precio)} <s style="opacity:.6;font-weight:400">${peso(p.antes)}</s>` : peso(p.precio); }
+function pctDesc(p) { return p.antes ? Math.round((1 - p.precio / p.antes) * 100) : 0; }
+function precioTxt(p) { return p.antes ? `${peso(p.precio)} <s style="opacity:.6;font-weight:400">${peso(p.antes)}</s> <span class="dcto">-${pctDesc(p)}%</span>` : peso(p.precio); }
 function agendaActiva() { return !!(st.cat.agenda && st.cat.agenda.activo); }
 function diasPosibles() { const u = totales()[1]; return ((st.cat.agenda || {}).dias || []).filter((x) => x.libre >= u); }
 
