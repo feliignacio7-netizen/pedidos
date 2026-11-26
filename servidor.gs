@@ -46,7 +46,7 @@ function doGet(e) {
   return json({ ok: true, activo: c.activo !== false && (c.productos || []).length > 0,
                 productos: (c.productos || []).map(p => publico(p, false)),
                 entrega: c.entrega || "", whatsapp: c.whatsapp || "", despacho: c.despacho || { activo: false }, mp: !!(c.mp && mpToken()),
-                amigo: !!amigoCodigo(), agenda: ag, preventa_hasta: cambio ? sumarDias(cambio, -1) : "", minimo_granel: MINIMO_GRANEL });
+                amigo: !!amigoCodigo(), agenda: ag, maps_key: String(c.maps_key || ""), preventa_hasta: cambio ? sumarDias(cambio, -1) : "", minimo_granel: MINIMO_GRANEL });
 }
 
 function doPost(e) {
