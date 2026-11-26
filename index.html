@@ -70,6 +70,9 @@ select{width:100%;font:inherit;font-size:16px;color:var(--fg);background:var(--s
 .dcto{display:inline-block;background:var(--pri);color:var(--fg);font-size:11px;font-weight:700;padding:1px 6px;border-radius:999px;vertical-align:1px;white-space:nowrap}
 .banda{margin-top:10px;padding:10px 14px;border-radius:12px;background:var(--fg);color:var(--bg);font-size:14px;text-align:center}
 gmp-place-autocomplete{width:100%;color-scheme:light}
+.cl{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:8px 0;border-top:1px solid var(--bor)}
+.cl:first-of-type{border-top:0}.cl .q{border:0;background:transparent;color:var(--pri-t);font:inherit;font-size:14px;text-decoration:underline;cursor:pointer;padding:8px 4px;min-height:40px}
+.cl .mini2{display:flex;align-items:center;gap:2px}.cl .mini2 button{width:36px;height:36px;border-radius:10px;border:1px solid var(--bor2);background:var(--sup);color:var(--fg);font:inherit;font-size:18px;cursor:pointer}
 .dias{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
 .dias button{min-height:48px;min-width:88px;padding:6px 10px;border-radius:12px;border:1.5px solid var(--bor2);background:var(--sup);color:var(--fg);font:inherit;cursor:pointer;line-height:1.15;touch-action:manipulation}
 .dias button small{display:block;font-size:12px;color:var(--mut)}
@@ -208,7 +211,7 @@ function dibujarCajas() {
       <button class="btn cp" id="addcaja" ${falta !== 0 ? "disabled" : ""}>Agregar caja · ${peso(c.precio)}</button>`;
   }
   const lista = st.cajas.map((k, i) => `<div class="cajita"><div class="sm">🎁 Caja de ${k.tam} · ${peso((cj.find((p) => p.id === k.cajaId) || {}).precio || 0)}: ${k.neg ? k.neg + " negro" + (k.neg > 1 ? "s" : "") : ""}${k.neg && k.bla ? " y " : ""}${k.bla ? k.bla + " blanco" + (k.bla > 1 ? "s" : "") : ""}</div><button class="q" data-q="${i}">Quitar</button></div>`).join("");
-  el.innerHTML = `<h2 class="tit">🎄 Caja de Navidad personalizable</h2><div class="mut sm">Elige el tamaño y tus sabores. Va con cinta y etiqueta navideña para escribir a quién va dirigida.</div>${tams}${cuerpo}${lista}`;
+  el.innerHTML = `<h2 class="tit">🎄 Caja de Navidad personalizable</h2><div class="mut sm">Elige el tamaño y tus sabores. Va con cinta y etiqueta navideña para escribir a quién va dirigida.</div>${tams}${cuerpo}`;
   el.querySelectorAll(".tam button").forEach((b) => b.onclick = () => { const t = Number(b.dataset.t); st.arma = st.arma && st.arma.tam === t ? null : { tam: t, neg: 0, bla: 0 }; dibujarCajas(); });
   el.querySelectorAll("[data-a]").forEach((b) => b.onclick = () => { const t = st.arma.tam, a = b.dataset.a;
     st.arma.neg = a === "neg" ? t : a === "bla" ? 0 : Math.ceil(t / 2); st.arma.bla = t - st.arma.neg; dibujarCajas(); });
@@ -241,6 +244,7 @@ function dibujarPaso1() {
     <button data-v="cajas" class="${vista === "cajas" ? "sel" : ""}" role="tab">🎁 Cajas de Navidad<small>${st.cajas.length ? st.cajas.length + " en tu pedido" : "desde " + precioTxt(cajasCat().reduce((a, p) => (!a || p.precio < a.precio ? p : a), null) || {})}</small></button>
     <button data-v="granel" class="${vista === "granel" ? "sel" : ""}" role="tab">Alfajores a granel<small>${nSueltos ? nSueltos + " en tu pedido" : precioTxt(alfajores()[0] || {}) + " c/u"}</small></button>
   </div>` : ""}
+  <div class="card" id="carrito" style="margin-top:12px" hidden></div>
   ${vista === "cajas" ? `<div class="card nav" id="navidad" style="margin-top:12px"></div>` : `
   <div class="card" style="margin-top:12px"><h2 class="tit">Alfajores a granel</h2><div class="mut xs">Toca + para sumar. Para retiro gratis en el metro, mínimo ${c.minimo_granel || 4} alfajores.</div>
     ${alfajores().map((p) => `<div class="fila prod"><div><div style="font-weight:500;font-size:16px">${/negro/i.test(p.nombre) ? "⚫" : "⚪"} ${esc(p.nombre)}</div><div class="mut sm">${precioTxt(p)} c/u</div></div>
@@ -503,12 +507,39 @@ function dibujarPaso3(ped, pago) {
   const b = $("#cptodo"); if (b) b.onclick = () => copiar(filas.map((f) => f[1]).join("\n"), "Datos copiados ✅ Pégalos en tu app del banco");
 }
 
+// "Tu pedido": siempre visible en el paso 1, con todo lo que lleva y cómo quitarlo.
+function sabTxt(k) { return [k.neg ? k.neg + " negro" + (k.neg > 1 ? "s" : "") : "", k.bla ? k.bla + " blanco" + (k.bla > 1 ? "s" : "") : ""].filter(Boolean).join(" y "); }
+function quitarCaja(i) {
+  const k = st.cajas.splice(i, 1)[0];
+  if (k) st.cant[k.cajaId] = Math.max(0, (st.cant[k.cajaId] || 0) - 1);
+  dibujarPaso1(); barra();
+}
+function dibujarCarrito() {
+  const el = $("#carrito"); if (!el) return;
+  const sueltos = alfajores().filter((p) => (st.cant[p.id] || 0) > 0);
+  if (!st.cajas.length && !sueltos.length) { el.hidden = true; return; }
+  el.hidden = false;
+  const precioCaja = (id) => (cajasCat().find((p) => p.id === id) || {}).precio || 0;
+  el.innerHTML = `<div class="fila" style="margin-bottom:4px"><h2 class="tit" style="margin:0">🛒 Tu pedido</h2><b>${peso(totales()[0])}</b></div>` +
+    st.cajas.map((k, i) => `<div class="cl"><div style="min-width:0"><div style="font-weight:500">🎁 Caja de ${k.tam}</div><div class="mut sm">${sabTxt(k)} · ${peso(precioCaja(k.cajaId))}</div></div>
+      <button class="q" data-qc="${i}">Quitar</button></div>`).join("") +
+    sueltos.map((p) => `<div class="cl"><div style="min-width:0"><div style="font-weight:500">${/negro/i.test(p.nombre) ? "⚫ Negros" : /blanco/i.test(p.nombre) ? "⚪ Blancos" : esc(sabor(p.nombre))} a granel</div><div class="mut sm">${st.cant[p.id]} × ${peso(p.precio)} = ${peso(st.cant[p.id] * p.precio)}</div></div>
+      <div class="mini2"><button data-cid="${p.id}" data-cd="-1" aria-label="Quitar uno">−</button><span class="num" style="min-width:28px;text-align:center">${st.cant[p.id]}</span><button data-cid="${p.id}" data-cd="1" aria-label="Sumar uno">+</button></div></div>`).join("");
+  el.querySelectorAll("[data-qc]").forEach((b) => b.onclick = () => quitarCaja(Number(b.dataset.qc)));
+  el.querySelectorAll("[data-cid]").forEach((b) => b.onclick = () => {
+    const id = Number(b.dataset.cid) || b.dataset.cid;
+    st.cant[id] = Math.max(0, Math.min(100, (st.cant[id] || 0) + Number(b.dataset.cd)));
+    const n = $("#n" + id); if (n) n.textContent = st.cant[id];
+    barra();
+  });
+}
 function barra() {
   const [t, u] = totales();
   const e = st.paso === 2 ? envioActual() : 0;
   $("#tot").textContent = peso(t + (e || 0));
   $("#unid").textContent = `${u} alfajor${u !== 1 ? "es" : ""}` + (st.paso === 2 && st.entrega === "despacho" ? (e ? " + envío" : e === null ? " · envío por coordinar" : " · envío sin costo") : "");
   $("#barra").hidden = st.paso === 3;
+  if (st.paso === 1) dibujarCarrito();
   const f1 = $("#falta1");
   if (f1 && st.paso === 1) {
     const r = st.cat.despacho || {}, min = Number(r.minimo || 0), falta = Math.max(0, min - t);
@@ -565,6 +596,8 @@ async function enviar() {
 $("#atras").onclick = () => irA(1);
 function faltaGranel() { const min = st.cat.minimo_granel || 4, n = alfajores().reduce((a, p) => a + (st.cant[p.id] || 0), 0);
   return !st.cajas.length && n > 0 && n < min ? min - n : 0; }
+$("#tot").style.cursor = "pointer";
+$("#tot").onclick = () => { if (st.paso !== 1) return; const c = $("#carrito"); if (c && !c.hidden) c.scrollIntoView({ behavior: "smooth", block: "center" }); };
 $("#sig").onclick = () => { if (st.paso === 1) { if (totales()[1] > 0) irA(2); } else enviar(); };
 
 async function irAPagarMp(ref, boton) {
