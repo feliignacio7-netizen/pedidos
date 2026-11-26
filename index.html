@@ -286,7 +286,7 @@ function textoCierre(c) {
 // "$1.000" o, si hay descuento, "$1.000 $1.200" con el normal tachado.
 function pctDesc(p) { return p.antes ? Math.round((1 - p.precio / p.antes) * 100) : 0; }
 function precioTxt(p) { return p.antes ? `${peso(p.precio)} <s style="opacity:.6;font-weight:400">${peso(p.antes)}</s> <span class="dcto">-${pctDesc(p)}%</span>` : peso(p.precio); }
-function agendaActiva() { return !!(st.cat.agenda && st.cat.agenda.activo); }
+function agendaActiva() { return !!(st.cat.agenda && st.cat.agenda.activo) && st.cajas.length > 0; }   // el día de entrega es solo para las Cajas de Navidad
 function diasPosibles() { const u = totales()[1]; return ((st.cat.agenda || {}).dias || []).filter((x) => x.libre >= u); }
 
 function listaComunas(c) { c = c || []; return c.length > 1 ? c.slice(0, -1).join(", ") + " y " + c[c.length - 1] : (c[0] || ""); }

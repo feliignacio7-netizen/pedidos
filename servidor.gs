@@ -128,7 +128,8 @@ function crearPedido(d) {
     const retiro = !(d.entrega === "despacho" && (c.despacho || {}).activo);
     if (retiro && sueltos === unidades && sueltos < MINIMO_GRANEL) return json({ ok: false, error: "Para retiro gratis en el metro, el mínimo es de " + MINIMO_GRANEL + " alfajores." });
     let fechaEntrega = "";
-    if (c.agenda && c.agenda.desde) {
+    const conCajas = lineas.some(l => (catalogo[l.producto_id] || {}).navidad);
+    if (c.agenda && c.agenda.desde && conCajas) {   // el día de entrega (con cupo) es solo para pedidos con Cajas de Navidad
       fechaEntrega = String(d.fecha_entrega || "").substring(0, 10);
       if (!fechaEntrega) return json({ ok: false, error: "Elige el día de entrega." });
       const dia = diasDisponibles(c, filas).filter(x => x.fecha === fechaEntrega)[0];
