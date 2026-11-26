@@ -162,7 +162,7 @@ function dibujarCajas() {
       <button class="btn cp" id="addcaja" ${falta !== 0 ? "disabled" : ""}>Agregar caja · ${peso(c.precio)}</button>`;
   }
   const lista = st.cajas.map((k, i) => `<div class="cajita"><div class="sm">🎁 Caja de ${k.tam} · ${peso((cj.find((p) => p.id === k.cajaId) || {}).precio || 0)}: ${k.neg ? k.neg + " negro" + (k.neg > 1 ? "s" : "") : ""}${k.neg && k.bla ? " y " : ""}${k.bla ? k.bla + " blanco" + (k.bla > 1 ? "s" : "") : ""}</div><button class="q" data-q="${i}">Quitar</button></div>`).join("");
-  el.innerHTML = `<h2 class="tit">🎄 Caja de Navidad</h2><div class="mut sm">Caja de regalo con cinta y etiqueta navideña. Tú eliges los sabores.</div>${tams}${cuerpo}${lista}`;
+  el.innerHTML = `<h2 class="tit">🎄 Caja de Navidad personalizable</h2><div class="mut sm">Elige el tamaño y tus sabores. Va con cinta y etiqueta navideña para escribir a quién va dirigida.</div>${tams}${cuerpo}${lista}`;
   el.querySelectorAll(".tam button").forEach((b) => b.onclick = () => { const t = Number(b.dataset.t); st.arma = st.arma && st.arma.tam === t ? null : { tam: t, neg: 0, bla: 0 }; dibujarCajas(); });
   el.querySelectorAll("[data-a]").forEach((b) => b.onclick = () => { const t = st.arma.tam, a = b.dataset.a;
     st.arma.neg = a === "neg" ? t : a === "bla" ? 0 : Math.ceil(t / 2); st.arma.bla = t - st.arma.neg; dibujarCajas(); });
@@ -190,7 +190,7 @@ function dibujarPaso1() {
   $("#cuerpo").innerHTML = indicador() + `
   ${st.codigo ? `<div class="banda">🤝 Precio especial con código${(alfajores()[0] || {}).antes ? ` · <b>-${pctDesc(alfajores()[0])}%</b>` : ""}</div>`
     : (alfajores()[0] || {}).antes ? `<div class="banda">🔥 <b>Cyber -${pctDesc(alfajores()[0])}%</b>: alfajor a ${peso(unidad)} <s style="opacity:.7">${peso(alfajores()[0].antes)}</s>${alfajores()[0].hasta ? ` hasta el <b>${fechaLarga(alfajores()[0].hasta)}</b>` : ""}</div>`
-    : (alfajores()[0] || {}).luego ? `<div class="banda">🔥 <b>Cyber</b> desde el <b>${fechaLarga(alfajores()[0].luego.desde)}</b>${alfajores()[0].luego.hasta ? ` al ${fechaLarga(alfajores()[0].luego.hasta)}` : ""}: alfajor a ${peso(alfajores()[0].luego.precio)} (<b>-${Math.round((1 - alfajores()[0].luego.precio / alfajores()[0].precio) * 100)}%</b>)</div>` : ""}
+    : ""}
   ${hayCajas ? `<div class="seg" role="tablist">
     <button data-v="cajas" class="${vista === "cajas" ? "sel" : ""}" role="tab">🎁 Cajas de Navidad<small>${st.cajas.length ? st.cajas.length + " en tu pedido" : "desde " + precioTxt(cajasCat().reduce((a, p) => (!a || p.precio < a.precio ? p : a), null) || {})}</small></button>
     <button data-v="granel" class="${vista === "granel" ? "sel" : ""}" role="tab">Alfajores a granel<small>${nSueltos ? nSueltos + " en tu pedido" : precioTxt(alfajores()[0] || {}) + " c/u"}</small></button>
@@ -565,7 +565,7 @@ async function iniciar() {
       $("#cuerpo").innerHTML = `<div class="card"><b>Por ahora no estamos tomando pedidos 🙏</b><div class="mut sm" style="margin-top:6px">Escríbenos por Instagram @alfajores_vicencio y te ayudamos.</div></div>`;
       return;
     }
-    sub.textContent = "Haz tu pedido en 3 pasos";
+    sub.textContent = ""; sub.hidden = true;
     irA(1);
   } catch (e) {
     sub.textContent = "No pudimos cargar la página. Intenta de nuevo en un momento o escríbenos por Instagram @alfajores_vicencio.";
