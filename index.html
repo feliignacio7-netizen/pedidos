@@ -61,6 +61,10 @@ hr{border:0;border-top:1px solid var(--bor);margin:8px 0}
 .prog{height:6px;border-radius:99px;background:var(--hov);margin-top:8px;overflow:hidden}.prog i{display:block;height:100%;background:var(--pri)}
 .opc input{width:20px;height:20px;margin:2px 0 0;flex-shrink:0;accent-color:var(--pri-t);padding:0}
 select{width:100%;font:inherit;font-size:16px;color:var(--fg);background:var(--sup);border:1px solid var(--bor2);border-radius:6px;padding:15px 14px;outline:none;-webkit-appearance:none;appearance:none}
+.dias{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
+.dias button{min-height:48px;min-width:88px;padding:6px 10px;border-radius:12px;border:1.5px solid var(--bor2);background:var(--sup);color:var(--fg);font:inherit;cursor:pointer;line-height:1.15;touch-action:manipulation}
+.dias button small{display:block;font-size:12px;color:var(--mut)}
+.dias button.sel{background:var(--pri);border-color:var(--pri);color:#fff}.dias button.sel small{color:#fff}
 .nav{border:1.5px solid var(--pri);background:#F6EDE6}
 .nav h2{margin:0}.tam{display:flex;gap:8px;margin:10px 0}
 .tam button{flex:1;min-height:48px;border-radius:12px;border:1.5px solid var(--bor2);background:var(--sup);color:var(--fg);font:inherit;font-weight:600;cursor:pointer;touch-action:manipulation}
@@ -92,7 +96,7 @@ const peso = (n) => "$" + Math.round(n).toLocaleString("es-CL");
 const esc = (t) => String(t ?? "").replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const BANDERA = '<svg viewBox="0 0 90 60"><rect width="90" height="60" fill="#fff"/><rect y="30" width="90" height="30" fill="#D52B1E"/><rect width="30" height="30" fill="#0039A6"/><polygon points="15,5 17.5,11.6 24.5,11.9 19,16.3 20.9,23.1 15,19.2 9.1,23.1 11,16.3 5.5,11.9 12.5,11.6" fill="#fff"/></svg>';
 const NOMBRES = ["Carrito", "Envío", "Pago"];
-const st = { paso: 1, cat: null, cant: {}, cajas: [], arma: null, medio: "", entrega: "retiro", comuna: "", otra: "", direccion: "", ref: (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random().toString(36).slice(2)), enviando: false };
+const st = { paso: 1, cat: null, cant: {}, cajas: [], arma: null, medio: "", fecha: "", codigo: "", entrega: "retiro", comuna: "", otra: "", direccion: "", ref: (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random().toString(36).slice(2)), enviando: false };
 
 function avisar(t) { const a = $("#aviso"); a.textContent = t; a.style.display = "block"; clearTimeout(avisar.t); avisar.t = setTimeout(() => a.style.display = "none", 3200); }
 function sabor(n) { return String(n).trim().toLowerCase().replace(/^alfajor(es)?\s+(de\s+)?/, ""); }
@@ -138,7 +142,7 @@ function indicador() {
 function dibujarCajas() {
   const el = $("#navidad"); if (!el) return;
   const cj = cajasCat(), a = st.arma;
-  const tams = `<div class="tam">${cj.map((p) => `<button data-t="${p.navidad}" class="${a && a.tam === p.navidad ? "sel" : ""}">${p.navidad} alfajores</button>`).join("")}</div>`;
+  const tams = `<div class="tam">${cj.map((p) => `<button data-t="${p.navidad}" class="${a && a.tam === p.navidad ? "sel" : ""}">${p.navidad} alfajores<br><small style="font-weight:400">${peso(p.precio)}</small></button>`).join("")}</div>`;
   let cuerpo = "";
   if (a) {
     const c = cj.find((p) => p.navidad === a.tam), falta = a.tam - a.neg - a.bla;
@@ -149,7 +153,7 @@ function dibujarCajas() {
       <button class="btn cp" id="addcaja" ${falta !== 0 ? "disabled" : ""}>Agregar caja · ${peso(c.precio)}</button>`;
   }
   const lista = st.cajas.map((k, i) => `<div class="cajita"><div class="sm">🎁 Caja de ${k.tam} · ${peso((cj.find((p) => p.id === k.cajaId) || {}).precio || 0)}: ${k.neg ? k.neg + " negro" + (k.neg > 1 ? "s" : "") : ""}${k.neg && k.bla ? " y " : ""}${k.bla ? k.bla + " blanco" + (k.bla > 1 ? "s" : "") : ""}</div><button class="q" data-q="${i}">Quitar</button></div>`).join("");
-  el.innerHTML = `<h2 class="tit">🎄 Caja de Navidad</h2><div class="mut sm">Caja de regalo con cinta y etiqueta navideña. Tú eliges los sabores: cada alfajor $1.000 y la caja suma $1.000 (la de 8 sale $9.000).</div>${tams}${cuerpo}${lista}`;
+  el.innerHTML = `<h2 class="tit">🎄 Caja de Navidad</h2><div class="mut sm">Caja de regalo con cinta y etiqueta navideña. Tú eliges los sabores.</div>${tams}${cuerpo}${lista}`;
   el.querySelectorAll(".tam button").forEach((b) => b.onclick = () => { const t = Number(b.dataset.t); st.arma = st.arma && st.arma.tam === t ? null : { tam: t, neg: 0, bla: 0 }; dibujarCajas(); });
   el.querySelectorAll("[data-s]").forEach((b) => b.onclick = () => { const k = b.dataset.s, n = st.arma.neg + st.arma.bla + Number(b.dataset.d); if (Number(b.dataset.d) > 0 && n > st.arma.tam) return; st.arma[k] = Math.max(0, st.arma[k] + Number(b.dataset.d)); dibujarCajas(); });
   const ad = $("#addcaja"); if (ad) ad.onclick = () => {
@@ -174,10 +178,35 @@ function dibujarPaso1() {
   </div>
   ${hayCajas ? `<div class="card nav" id="navidad" style="margin-top:12px"></div>` : ""}
   <div class="card sm" id="falta1" style="margin-top:12px;border-color:var(--pri);background:#F6EDE6" hidden></div>
+  ${c.amigo ? (st.codigo ? `<div class="mut sm" style="margin-top:12px;text-align:center">✓ Código aplicado</div>`
+    : `<details class="sm" style="margin-top:12px"><summary class="mut" style="cursor:pointer;padding:8px 0">¿Tienes un código?</summary>
+      <div class="fila" style="gap:8px"><input id="codigo" autocomplete="off" placeholder="Escribe tu código" style="flex:1"><button class="btn out" id="aplicar" style="width:auto;margin:0;padding:0 16px">Aplicar</button></div></details>`) : ""}
   ${c.whatsapp ? `<a class="btn out" style="margin-top:12px" target="_blank" rel="noopener" href="https://wa.me/${waNum(c.whatsapp)}?text=${encodeURIComponent("Hola! Tengo una consulta sobre los alfajores.")}">💬 ¿Tienes alguna duda? Escríbenos</a>` : ""}`;
   document.querySelectorAll(".cant button[data-id]").forEach((b) => b.onclick = () => { const id = Number(b.dataset.id) || b.dataset.id; st.cant[id] = Math.max(piso(id), Math.min(100, (st.cant[id] || 0) + Number(b.dataset.d))); $("#n" + id).textContent = st.cant[id]; barra(); });
   if (hayCajas) dibujarCajas();
+  const ap = $("#aplicar"); if (ap) ap.onclick = aplicarCodigo;
 }
+
+async function aplicarCodigo() {
+  const codigo = ($("#codigo").value || "").trim();
+  if (!codigo) { avisar("Escribe tu código."); return; }
+  try {
+    const r = await fetch(window.API_URL, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify({ accion: "amigo", codigo: codigo }) });
+    const d = await r.json();
+    if (!d.ok) { avisar(d.error || "Ese código no es válido."); return; }
+    const pr = {}; (d.productos || []).forEach((p) => pr[p.id] = p.precio);
+    st.cat.productos.forEach((p) => { if (pr[p.id]) p.precio = pr[p.id]; });
+    st.codigo = codigo; dibujarPaso1(); barra(); avisar("✓ Código aplicado");
+  } catch (e) { avisar("Sin conexión. Intenta de nuevo."); }
+}
+
+// Días de entrega que alcanzan para este pedido (el tope por día no se muestra: si no alcanza, el día no aparece).
+const MESES = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"];
+const DIAS = ["domingo", "lunes", "martes", "miércoles", "jueves", "viernes", "sábado"];
+function fechaObj(f) { const p = f.split("-").map(Number); return new Date(p[0], p[1] - 1, p[2]); }
+function fechaLarga(f) { const d = fechaObj(f); return `${DIAS[d.getDay()]} ${d.getDate()} de ${MESES[d.getMonth()]}`; }
+function agendaActiva() { return !!(st.cat.agenda && st.cat.agenda.activo); }
+function diasPosibles() { const u = totales()[1]; return ((st.cat.agenda || {}).dias || []).filter((x) => x.libre >= u); }
 
 function listaComunas(c) { c = c || []; return c.length > 1 ? c.slice(0, -1).join(", ") + " y " + c[c.length - 1] : (c[0] || ""); }
 function resumenPaso2() {   // resumen del pedido como en un carrito: subtotal, envío y total
@@ -201,6 +230,11 @@ function dibujarPaso2() {
     <div class="xs mut" style="margin-top:4px">Por si no logramos contactarte por WhatsApp. No enviamos publicidad.</div>
     <input class="trampa" id="trampa" tabindex="-1" autocomplete="off" aria-hidden="true">
   </div>
+  ${agendaActiva() ? `<div class="card" style="margin-top:12px"><h2 class="tit">Día de entrega</h2>
+    ${diasPosibles().length ? `<div class="mut sm">Elige qué día quieres recibir tu pedido.</div><div class="dias">${diasPosibles().map((x) => { const d = fechaObj(x.fecha);
+      return `<button data-f="${x.fecha}" class="${st.fecha === x.fecha ? "sel" : ""}">${DIAS[d.getDay()].slice(0, 3)}<b style="display:block;font-size:18px">${d.getDate()}</b><small>${MESES[d.getMonth()].slice(0, 3)}</small></button>`; }).join("")}</div>`
+      : `<div class="sm" style="margin-top:4px">Ya no quedan días disponibles para este pedido 🙏</div><div class="mut sm" style="margin-top:4px">Escríbenos por WhatsApp o Instagram @alfajores_vicencio y vemos cómo ayudarte.</div>`}
+  </div>` : ""}
   <div class="card" style="margin-top:12px"><h2 class="tit">Método de envío</h2>
     <label class="opc ${st.entrega === "retiro" || !act ? "sel" : ""}" id="o_retiro"><input type="radio" name="ent" value="retiro" ${st.entrega === "retiro" || !act ? "checked" : ""}>
       <div style="flex:1"><div class="fila"><b style="font-weight:600">🚇 Metro Escuela Militar</b><span class="gratis">Gratis</span></div>
@@ -245,6 +279,9 @@ function dibujarPaso2() {
     else { a.textContent = `Faltan ${f} número${f !== 1 ? "s" : ""} (son 8 después del +569)`; a.style.color = ""; a.style.fontWeight = 400; } }
   tel.addEventListener("input", () => { tel.value = limpiar(tel.value); st.tel = tel.value; ayuda(); });
   tel.addEventListener("paste", (e) => { e.preventDefault(); tel.value = limpiar((e.clipboardData || window.clipboardData).getData("text")); st.tel = tel.value; ayuda(); });
+  if (agendaActiva() && st.fecha && !diasPosibles().some((x) => x.fecha === st.fecha)) st.fecha = "";
+  document.querySelectorAll(".dias button").forEach((b) => b.onclick = () => { st.fecha = b.dataset.f;
+    document.querySelectorAll(".dias button").forEach((x) => x.classList.toggle("sel", x === b)); });
   $("#nombre").oninput = (e) => st.nombre = e.target.value;
   $("#correo").oninput = (e) => st.correo = e.target.value.trim();
   ayuda();
@@ -310,6 +347,7 @@ function dibujarPaso3(ped, pago) {
   <div class="card"><h2 class="tit">Pago</h2><div class="mut sm">¡Gracias! Tu pedido quedó anotado. ${c.mp ? "Elige cómo quieres pagar:" : "Solo faltan 3 cosas:"}</div></div>
   <div class="card" style="margin-top:12px"><div style="font-weight:600;font-size:16px;margin-bottom:6px">Resumen de tu pedido</div>
     ${ped.lineas.map((l) => `<div class="fila sm"><span>${l.cantidad} × ${esc(l.nombre)}</span><span>${peso(l.cantidad * l.precio)}</span></div>`).join("")}
+    ${ped.fecha_entrega ? `<div class="fila sm"><span>📅 Entrega</span><span><b>${fechaLarga(ped.fecha_entrega)}</b></span></div>` : ""}
     ${desp ? `<div class="fila sm"><span>🚗 Envío a ${esc(comuna)}</span><span>${coordinar ? "por coordinar" : envio ? peso(envio) : "sin costo"}</span></div>` : ""}
     <hr><div class="fila"><span style="font-weight:600;font-size:16px">Total a pagar</span><span style="font-weight:700;font-size:20px">${peso(ped.total)}</span></div></div>
   ${c.mp ? `<div class="card" style="margin-top:12px"><h2 class="tit">Medio de pago</h2>
@@ -322,8 +360,9 @@ function dibujarPaso3(ped, pago) {
   </div>` : ""}
   ${elegido === "mp" ? mp : elegido === "tef" ? tef : ""}
   ${elegido ? `<div class="card" style="margin-top:12px"><div class="fila" style="justify-content:flex-start"><span class="mini">${elegido === "mp" ? 2 : 3}</span><b style="font-size:16px">Coordinamos la entrega</b></div>
-    ${desp ? `<div class="sm" style="margin-top:6px">🚗 A domicilio: ${esc(dir)}, ${esc(comuna)}</div>` : `<div class="sm" style="margin-top:6px">🚇 Metro Escuela Militar</div>`}
-    <div class="mut sm" style="margin-top:4px">Apenas ${elegido === "mp" ? "se confirme tu pago" : "recibamos tu comprobante"}, <b>te escribimos por WhatsApp</b> para coordinar el día y la hora de la entrega.</div></div>` : ""}
+    ${ped.fecha_entrega ? `<div class="sm" style="margin-top:6px">📅 <b>${fechaLarga(ped.fecha_entrega)}</b></div>` : ""}
+    ${desp ? `<div class="sm" style="margin-top:4px">🚗 A domicilio: ${esc(dir)}, ${esc(comuna)}</div>` : `<div class="sm" style="margin-top:4px">🚇 Metro Escuela Militar</div>`}
+    <div class="mut sm" style="margin-top:4px">Apenas ${elegido === "mp" ? "se confirme tu pago" : "recibamos tu comprobante"}, <b>te escribimos por WhatsApp</b> para coordinar ${ped.fecha_entrega ? "la hora" : "el día y la hora"} de la entrega.</div></div>` : ""}
   ${c.whatsapp ? `<a class="btn out" style="margin-top:12px" target="_blank" rel="noopener" href="https://wa.me/${waNum(c.whatsapp)}?text=${encodeURIComponent("Hola! Tengo una consulta sobre mi pedido de " + frase(ped.lineas) + ".")}">💬 Tengo una consulta</a>` : ""}
   <p class="mut sm" style="text-align:center">Puedes cerrar esta página. ¡Gracias por apoyar a Alfajores Vicencio! 🤎</p>`;
   document.querySelectorAll('input[name="medio"]').forEach((r) => r.onchange = () => { st.medio = r.value; dibujarPaso3(ped, pago); });
@@ -397,6 +436,10 @@ async function enviar() {
   if (tel.length !== 8) { avisar("Escribe los 8 números de tu celular, los que van después del +569."); return; }
   if ((st.nombre || "").trim().length < 2) { avisar("Escribe tu nombre."); return; }
   if (!/^[^@\s]+@[^@\s]+\.[^@\s]{2,}$/.test((st.correo || "").trim())) { avisar("Escribe un correo válido, por ejemplo nombre@gmail.com."); return; }
+  if (agendaActiva()) {
+    if (!diasPosibles().length) { avisar("Ya no quedan días disponibles para este pedido. Escríbenos por WhatsApp."); return; }
+    if (!st.fecha) { avisar("Elige el día de entrega."); return; }
+  }
   if (st.entrega === "despacho" && despachoActivo()) {
     if (!comunaElegida()) { avisar("Elige tu comuna para el despacho."); return; }
     if ((st.direccion || "").trim().length < 5) { avisar("Escribe tu dirección para el despacho."); return; }
@@ -405,10 +448,17 @@ async function enviar() {
   try {
     const r = await fetch(window.API_URL, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" },
       body: JSON.stringify({ accion: "pedido", ref: st.ref, nombre: st.nombre, telefono: tel, correo: (st.correo || "").trim(), nota: st.cajas.length ? "#C " + st.cajas.map((k) => `${k.cajaId}=${negroId()}:${k.neg},${blancoId()}:${k.bla}`).join(";") : "", cantidades: st.cant,
+        fecha_entrega: agendaActiva() ? st.fecha : "", codigo: st.codigo || "",
         entrega: despachoActivo() ? st.entrega : "retiro", comuna: comunaElegida(), direccion: st.direccion || "", trampa: ($("#trampa") || {}).value || "" }) });
     const d = await r.json();
     st.enviando = false;
-    if (!d.ok) { avisar(d.error || "No pudimos guardar tu pedido. Intenta de nuevo."); barra(); return; }
+    if (!d.ok) {
+      avisar(d.error || "No pudimos guardar tu pedido. Intenta de nuevo."); barra();
+      if (agendaActiva() && /día/.test(d.error || "")) {   // otro cliente tomó el cupo: se vuelven a pedir los días
+        try { const c2 = await (await fetch(window.API_URL)).json(); if (c2.ok) { st.cat.agenda = c2.agenda; st.fecha = ""; dibujarPaso2(); } } catch (e) {}
+      }
+      return;
+    }
     st.paso = 3; window.scrollTo(0, 0); barra(); dibujarPaso3(d.pedido, d.pago || {});
   } catch (e) {
     st.enviando = false; barra();

@@ -5,7 +5,7 @@
  * (Este archivo se carga solo desde el cargador de Apps Script; la clave TOKEN la aporta el cargador.)
  */
 const HOJA = "Pedidos";
-const COLUMNAS = ["ref", "creado", "nombre", "telefono", "nota", "lineas", "total", "importado", "entrega", "comuna", "direccion", "envio", "correo", "mp_link", "mp_pago", "mp_avisado"];
+const COLUMNAS = ["ref", "creado", "nombre", "telefono", "nota", "lineas", "total", "importado", "entrega", "comuna", "direccion", "envio", "correo", "mp_link", "mp_pago", "mp_avisado", "fecha_entrega"];
 const HOJA_OP = "Opiniones";
 const COL_OP = ["ref", "creado", "estrellas", "comentario", "importado"];
 const HOJA_COMP = "Comprobantes";
@@ -40,8 +40,11 @@ function calcularEnvio(c, subtotal, entrega, comuna) {
 // La página pública pide aquí el catálogo (sin datos de pago).
 function doGet(e) {
   const c = leerCfg();
-  return json({ ok: true, activo: c.activo !== false && (c.productos || []).length > 0, productos: c.productos || [],
-                entrega: c.entrega || "", whatsapp: c.whatsapp || "", despacho: c.despacho || { activo: false }, mp: !!(c.mp && mpToken()) });
+  const ag = c.agenda && c.agenda.desde ? { activo: true, dias: diasDisponibles(c, null).map(x => ({ fecha: x.fecha, libre: x.libre })) } : { activo: false };
+  return json({ ok: true, activo: c.activo !== false && (c.productos || []).length > 0,
+                productos: (c.productos || []).map(p => publico(p, false)),
+                entrega: c.entrega || "", whatsapp: c.whatsapp || "", despacho: c.despacho || { activo: false }, mp: !!(c.mp && mpToken()),
+                amigo: !!amigoCodigo(), agenda: ag });
 }
 
 function doPost(e) {
@@ -52,12 +55,14 @@ function doPost(e) {
   if (d.accion === "pedido") return crearPedido(d);
   if (d.accion === "mp_link") return mpLink(d);
   if (d.accion === "estado_mp") return estadoMp(d);
+  if (d.accion === "amigo") return validarAmigo(d);
   if (d.accion === "opinion") return guardarOpinion(d);
   if (d.accion === "comprobante") return guardarComprobante(d);
   if (d.token !== TOKEN) return json({ ok: false, error: "No autorizado." });
   if (d.accion === "publicar") {
     const props = PropertiesService.getScriptProperties();
     props.setProperty("cfg", JSON.stringify(d.cfg || {}));
+    if (typeof d.amigo_codigo === "string") { if (d.amigo_codigo) props.setProperty("amigo_codigo", d.amigo_codigo); else props.deleteProperty("amigo_codigo"); }
     if (typeof d.mp_token === "string") { if (d.mp_token) props.setProperty("mp_token", d.mp_token); else props.deleteProperty("mp_token"); }
     return json({ ok: true });
   }
@@ -100,19 +105,31 @@ function crearPedido(d) {
       if (String(filas[i][idx.ref]) === ref) {
         return json({ ok: true, pedido: { ref: ref, nombre: filas[i][idx.nombre], lineas: JSON.parse(filas[i][idx.lineas]), total: filas[i][idx.total],
                                           entrega: filas[i][idx.entrega] || "retiro", comuna: filas[i][idx.comuna] || "", direccion: filas[i][idx.direccion] || "",
-                                          envio: Number(filas[i][idx.envio] || 0) }, pago: c.pago || {} });
+                                          envio: Number(filas[i][idx.envio] || 0), fecha_entrega: String(filas[i][idx.fecha_entrega] || "") }, pago: c.pago || {} });
       }
     }
     const catalogo = {}; (c.productos || []).forEach(p => catalogo[p.id] = p);
+    const amigo = esAmigo(d.codigo);
+    if (String(d.codigo || "").trim() && !amigo) return json({ ok: false, error: "Ese código no es válido." });
     const lineas = []; let total = 0, unidades = 0;
     Object.keys(d.cantidades || {}).forEach(k => {
       const p = catalogo[k]; const cant = parseInt(d.cantidades[k], 10);
       if (!p || !(cant > 0)) return;
       if (cant > 100) throw new Error("Para pedidos de más de 100 alfajores, escríbenos por WhatsApp.");
-      lineas.push({ producto_id: p.id, nombre: p.nombre, cantidad: cant, precio: p.precio });
-      total += cant * p.precio; unidades += cant;
+      const precio = precioDe(p, amigo);
+      lineas.push({ producto_id: p.id, nombre: p.nombre, cantidad: cant, precio: precio });
+      total += cant * precio; unidades += cant * (Number(p.navidad) || 1);
     });
     if (unidades <= 0) return json({ ok: false, error: "Elige al menos 1 alfajor." });
+    let fechaEntrega = "";
+    if (c.agenda && c.agenda.desde) {
+      fechaEntrega = String(d.fecha_entrega || "").substring(0, 10);
+      if (!fechaEntrega) return json({ ok: false, error: "Elige el día de entrega." });
+      const dia = diasDisponibles(c, filas).filter(x => x.fecha === fechaEntrega)[0];
+      if (!dia) return json({ ok: false, error: "Ese día de entrega ya no está disponible. Elige otro, por favor." });
+      if (dia.libre < unidades) return json({ ok: false, error: "Para ese día ya no alcanzamos con tantos alfajores. Elige otro día o escríbenos por WhatsApp." });
+    }
+    const notaFinal = (amigo ? (nota ? nota + " · " : "") + "Con código" : nota).substring(0, 300);
     if (unidades > 200) return json({ ok: false, error: "Para pedidos tan grandes, escríbenos por WhatsApp." });
     const despacho = d.entrega === "despacho" && (c.despacho || {}).activo;
     const entrega = despacho ? "despacho" : "retiro";
@@ -122,10 +139,10 @@ function crearPedido(d) {
     if (despacho && (c.despacho.comunas || []).indexOf(comuna) < 0) return json({ ok: false, error: "Por ahora solo entregamos a domicilio en " + (c.despacho.comunas || []).join(", ") + ". Puedes retirar gratis en el metro Escuela Militar." });
     const envio = calcularEnvio(c, total, entrega, comuna);
     const creado = Utilities.formatDate(new Date(), "America/Santiago", "yyyy-MM-dd HH:mm");
-    h.appendRow([ref, "'" + creado, nombre, "'" + tel, nota, JSON.stringify(lineas), total + envio, "", entrega, comuna, direccion, envio, correo]);
+    h.appendRow([ref, "'" + creado, nombre, "'" + tel, notaFinal, JSON.stringify(lineas), total + envio, "", entrega, comuna, direccion, envio, correo, "", "", "", fechaEntrega ? "'" + fechaEntrega : ""]);
     cache.put(clave, String(n + 1), 3600);
     return json({ ok: true, pedido: { ref: ref, nombre: nombre, lineas: lineas, total: total + envio, creado: creado,
-                                      entrega: entrega, comuna: comuna, direccion: direccion, envio: envio }, pago: c.pago || {} });
+                                      entrega: entrega, comuna: comuna, direccion: direccion, envio: envio, fecha_entrega: fechaEntrega }, pago: c.pago || {} });
   } catch (err) {
     return json({ ok: false, error: String(err.message || err) });
   } finally {
@@ -141,7 +158,7 @@ function pendientes() {
     salida.push({ ref: String(filas[i][0]), creado: String(filas[i][1]), nombre: filas[i][2], telefono: String(filas[i][3]).replace(/\D/g, ""),
                   nota: filas[i][4], lineas: JSON.parse(filas[i][5]), total: filas[i][6],
                   entrega: String(filas[i][8] || "retiro"), comuna: String(filas[i][9] || ""), direccion: String(filas[i][10] || ""),
-                  envio: Number(filas[i][11] || 0), correo: String(filas[i][12] || "") });
+                  envio: Number(filas[i][11] || 0), correo: String(filas[i][12] || ""), fecha_entrega: String(filas[i][16] || "") });
   }
   return json({ ok: true, pedidos: salida });
 }
@@ -423,4 +440,78 @@ function marcarPagosMp(refs) {
   const ahora = Utilities.formatDate(new Date(), "America/Santiago", "yyyy-MM-dd HH:mm");
   for (let i = 1; i < filas.length; i++) if (set[String(filas[i][0])]) h.getRange(i + 1, I.mp_avisado + 1).setValue(ahora);
   return json({ ok: true });
+}
+
+// ---------- Precios por fecha, código amigo y días de entrega con cupo ----------
+function hoySantiago() { return Utilities.formatDate(new Date(), "America/Santiago", "yyyy-MM-dd"); }
+
+// Precio del producto hoy: el último tramo cuya fecha 'desde' ya llegó (el ERP publica los cambios de precio futuros).
+// Con código amigo, el precio amigo.
+function precioDe(p, amigo) {
+  if (amigo && Number(p.precio_amigo) > 0) return Number(p.precio_amigo);
+  const hoy = hoySantiago();
+  let precio = Number(p.precio);
+  (p.tramos || []).forEach(t => { if (String(t.desde) <= hoy) precio = Number(t.precio); });
+  return precio;
+}
+
+function publico(p, amigo) {
+  const x = { id: p.id, nombre: p.nombre, precio: precioDe(p, amigo) };
+  if (p.navidad) x.navidad = p.navidad;
+  return x;
+}
+
+function amigoCodigo() { return PropertiesService.getScriptProperties().getProperty("amigo_codigo") || ""; }
+function normal(t) { return String(t || "").trim().toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, ""); }
+function esAmigo(codigo) { const k = amigoCodigo(); return !!k && !!String(codigo || "").trim() && normal(codigo) === normal(k); }
+
+function validarAmigo(d) {
+  const cache = CacheService.getScriptCache(), clave = "am" + Utilities.formatDate(new Date(), "UTC", "yyyyMMddHH"), n = Number(cache.get(clave) || 0);
+  if (n >= 60) return json({ ok: false, error: "Demasiados intentos. Prueba en un rato." });
+  cache.put(clave, String(n + 1), 3600);
+  if (!esAmigo(d.codigo)) return json({ ok: false, error: "Ese código no es válido." });
+  return json({ ok: true, productos: (leerCfg().productos || []).map(p => publico(p, true)) });
+}
+
+function sumarDias(fecha, n) {
+  const p = String(fecha).split("-").map(Number), t = new Date(Date.UTC(p[0], p[1] - 1, p[2] + n));
+  return t.getUTCFullYear() + "-" + ("0" + (t.getUTCMonth() + 1)).slice(-2) + "-" + ("0" + t.getUTCDate()).slice(-2);
+}
+
+// Alfajores de un pedido (una caja de N cuenta N).
+function unidadesDe(lineas, catalogo) {
+  let u = 0;
+  (lineas || []).forEach(l => {
+    const p = catalogo[l.producto_id] || {};
+    const m = /caja de navidad\s+(\d+)/i.exec(String(l.nombre || ""));
+    u += Number(l.cantidad || 0) * (Number(p.navidad) || (m ? Number(m[1]) : 1));
+  });
+  return u;
+}
+
+// Días que todavía se pueden elegir, con lo que queda libre (tope interno; la página no lo muestra).
+// Ocupado = lo que el ERP informa (pedidos vigentes) + pedidos de la hoja que el ERP aún no conoce.
+function diasDisponibles(c, filas) {
+  const a = c.agenda || {};
+  if (!a.desde || !a.hasta) return [];
+  const cupo = Number(a.cupo) || 0, antes = Number(a.dias_antes) || 0, hora = ("0" + (Number(a.hora) || 0)).slice(-2) + ":00";
+  const conocidos = {}; (a.refs || []).forEach(r => conocidos[String(r)] = true);
+  const ocupado = {}; Object.keys(a.ocupado || {}).forEach(k => ocupado[k] = Number(a.ocupado[k]) || 0);
+  const catalogo = {}; (c.productos || []).forEach(p => catalogo[p.id] = p);
+  filas = filas || hoja().getDataRange().getValues();
+  const I = {}; COLUMNAS.forEach((k, i) => I[k] = i);
+  for (let i = 1; i < filas.length; i++) {
+    const f = String(filas[i][I.fecha_entrega] || "").replace(/^'/, "").substring(0, 10);
+    if (!f || conocidos[String(filas[i][0])]) continue;
+    let ls = []; try { ls = JSON.parse(filas[i][I.lineas]); } catch (e) {}
+    ocupado[f] = (ocupado[f] || 0) + unidadesDe(ls, catalogo);
+  }
+  const ahora = Utilities.formatDate(new Date(), "America/Santiago", "yyyy-MM-dd HH:mm");
+  const salida = [];
+  for (let d = String(a.desde), n = 0; d <= String(a.hasta) && n < 120; d = sumarDias(d, 1), n++) {
+    if (ahora >= sumarDias(d, -antes) + " " + hora) continue;   // ya cerró
+    const libre = cupo - (ocupado[d] || 0);
+    if (libre > 0) salida.push({ fecha: d, libre: libre });
+  }
+  return salida;
 }
