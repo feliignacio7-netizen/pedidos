@@ -5,7 +5,7 @@
  * (Este archivo se carga solo desde el cargador de Apps Script; la clave TOKEN la aporta el cargador.)
  */
 const HOJA = "Pedidos";
-const COLUMNAS = ["ref", "creado", "nombre", "telefono", "nota", "lineas", "total", "importado", "entrega", "comuna", "direccion", "envio", "correo", "mp_link", "mp_pago", "mp_avisado", "fecha_entrega"];
+const COLUMNAS = ["ref", "creado", "nombre", "telefono", "nota", "lineas", "total", "importado", "entrega", "comuna", "direccion", "envio", "correo", "mp_link", "mp_pago", "mp_avisado", "fecha_entrega", "correos"];
 const HOJA_OP = "Opiniones";
 const COL_OP = ["ref", "creado", "estrellas", "comentario", "importado"];
 const HOJA_COMP = "Comprobantes";
@@ -75,6 +75,7 @@ function doPost(e) {
   if (d.accion === "comprobantes") return comprobantesPendientes();
   if (d.accion === "pagos_mp") return pagosMpPendientes();
   if (d.accion === "marcar_pagos_mp") return marcarPagosMp(d.refs || []);
+  if (d.accion === "correo") return correoDesdeErp(d);
   if (d.accion === "marcar_comprobantes") return marcarComprobantes(d.refs || []);
   return json({ ok: false, error: "Acción desconocida." });
 }
@@ -107,7 +108,7 @@ function crearPedido(d) {
       if (String(filas[i][idx.ref]) === ref) {
         return json({ ok: true, pedido: { ref: ref, nombre: filas[i][idx.nombre], lineas: JSON.parse(filas[i][idx.lineas]), total: filas[i][idx.total],
                                           entrega: filas[i][idx.entrega] || "retiro", comuna: filas[i][idx.comuna] || "", direccion: filas[i][idx.direccion] || "",
-                                          envio: Number(filas[i][idx.envio] || 0), fecha_entrega: String(filas[i][idx.fecha_entrega] || "") }, pago: c.pago || {} });
+                                          envio: Number(filas[i][idx.envio] || 0), fecha_entrega: String(filas[i][idx.fecha_entrega] || ""), codigo: codigoCorto(String(filas[i][0])) }, pago: c.pago || {} });
       }
     }
     const catalogo = {}; (c.productos || []).forEach(p => catalogo[p.id] = p);
@@ -144,10 +145,11 @@ function crearPedido(d) {
     if (despacho && (c.despacho.comunas || []).indexOf(comuna) < 0) return json({ ok: false, error: "Por ahora solo entregamos a domicilio en " + (c.despacho.comunas || []).join(", ") + ". Puedes retirar gratis en el metro Escuela Militar." });
     const envio = calcularEnvio(c, total, entrega, comuna);
     const creado = Utilities.formatDate(new Date(), "America/Santiago", "yyyy-MM-dd HH:mm");
-    h.appendRow([ref, "'" + creado, nombre, "'" + tel, notaFinal, JSON.stringify(lineas), total + envio, "", entrega, comuna, direccion, envio, correo, "", "", "", fechaEntrega ? "'" + fechaEntrega : ""]);
+    h.appendRow([ref, "'" + creado, nombre, "'" + tel, notaFinal, JSON.stringify(lineas), total + envio, "", entrega, comuna, direccion, envio, correo, "", "", "", fechaEntrega ? "'" + fechaEntrega : "", ""]);
+    enviarCorreo(h, 0, "recibido");   // 0 = la fila recién agregada
     cache.put(clave, String(n + 1), 3600);
     return json({ ok: true, pedido: { ref: ref, nombre: nombre, lineas: lineas, total: total + envio, creado: creado,
-                                      entrega: entrega, comuna: comuna, direccion: direccion, envio: envio, fecha_entrega: fechaEntrega }, pago: c.pago || {} });
+                                      entrega: entrega, comuna: comuna, direccion: direccion, envio: envio, fecha_entrega: fechaEntrega, codigo: codigoCorto(ref) }, pago: c.pago || {} });
   } catch (err) {
     return json({ ok: false, error: String(err.message || err) });
   } finally {
@@ -393,6 +395,7 @@ function mpRevisar(ref, pagoId) {
       const neto = ((ap.transaction_details || {}).net_received_amount);
       h.getRange(x.n, I.mp_pago + 1).setValue(JSON.stringify({ id: String(ap.id), monto: Number(ap.transaction_amount), neto: neto == null ? null : Number(neto),
                                                                  fecha: String(ap.date_approved || ""), tipo: String(ap.payment_type_id || "") }));
+      enviarCorreo(h, x.n, "pagado");
     }
     return { pagado: true };
   } finally {
@@ -535,4 +538,76 @@ function diasDisponibles(c, filas) {
     if (libre > 0) salida.push({ fecha: d, libre: libre, cierre: cierre });
   }
   return salida;
+}
+
+// ---------- Correos al cliente por estado del pedido ----------
+// Se envían desde la cuenta de Google dueña del script (necesita el permiso de MailApp: ver Codigo.gs → autorizar).
+const PAGINA = "https://alfajoresvicencio.cl";
+function codigoCorto(ref) { return String(ref || "").replace(/[^a-zA-Z0-9]/g, "").substring(0, 5).toUpperCase(); }
+function pesos(n) { return "$" + Math.round(Number(n) || 0).toString().replace(/\B(?=(\d{3})+(?!\d))/g, "."); }
+function fechaBonita(f) {
+  if (!f) return "";
+  const D = ["domingo", "lunes", "martes", "miércoles", "jueves", "viernes", "sábado"], M = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"];
+  const p = String(f).replace(/^'/, "").split("-").map(Number), d = new Date(Date.UTC(p[0], p[1] - 1, p[2]));
+  return D[d.getUTCDay()] + " " + p[2] + " de " + M[p[1] - 1];
+}
+function escH(t) { return String(t || "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
+
+const TEXTOS_CORREO = {
+  recibido: { asunto: "Recibimos tu pedido", titulo: "¡Recibimos tu pedido!", texto: "Tu pedido quedó anotado. Si aún no pagas, puedes hacerlo con tarjeta o transferencia desde la página; con transferencia lo reservamos por 2 horas." },
+  pagado: { asunto: "Pago confirmado", titulo: "Pago confirmado ✅", texto: "Recibimos tu pago. Tu pedido está confirmado y te escribiremos por WhatsApp para coordinar la hora de entrega." },
+  listo: { asunto: "Tu pedido está listo", titulo: "Tu pedido está listo 🎁", texto: "Ya está listo para retirar en el metro Escuela Militar. Coordinamos la hora por WhatsApp." },
+  en_camino: { asunto: "Tu pedido va en camino", titulo: "Tu pedido va en camino 🚗", texto: "Salió hacia tu dirección. Te avisaremos por WhatsApp al llegar." },
+  entregado: { asunto: "¡Gracias por tu compra!", titulo: "¡Gracias! 🤎", texto: "Esperamos que disfrutes tus alfajores. Nos ayudaría mucho saber qué te parecieron." }
+};
+
+function cuerpoCorreo(f, I, tipo) {
+  const t = TEXTOS_CORREO[tipo], ref = String(f[0]), cod = codigoCorto(ref);
+  let lineas = []; try { lineas = JSON.parse(f[I.lineas] || "[]"); } catch (e) {}
+  const filas = lineas.map(l => `<tr><td style="padding:4px 0">${l.cantidad} × ${escH(l.nombre)}</td><td style="padding:4px 0;text-align:right">${pesos(l.cantidad * l.precio)}</td></tr>`).join("");
+  const envio = Number(f[I.envio] || 0), desp = String(f[I.entrega]) === "despacho";
+  const dia = fechaBonita(f[I.fecha_entrega]);
+  const entrega = desp ? `🚗 Despacho a ${escH(f[I.direccion])}, ${escH(f[I.comuna])}` : "🚇 Retiro en metro Escuela Militar";
+  const boton = tipo === "entregado" ? `<p style="text-align:center;margin:24px 0"><a href="${PAGINA}/opinion.html?p=${encodeURIComponent(ref)}" style="background:#BC7B69;color:#2A1A12;text-decoration:none;padding:12px 22px;border-radius:999px;font-weight:600">Dejar mi opinión</a></p>` : "";
+  return `<div style="background:#F3EEE6;padding:24px 12px;font-family:Helvetica,Arial,sans-serif;color:#2A1A12">
+<div style="max-width:520px;margin:0 auto;background:#fff;border-radius:16px;padding:28px 24px">
+<p style="text-align:center;letter-spacing:6px;font-family:Georgia,serif;font-size:22px;margin:0">VICENCIO</p>
+<p style="text-align:center;letter-spacing:3px;font-size:10px;color:#6B4A35;margin:4px 0 22px">ALFAJORES · ARTESANALES</p>
+<h1 style="font-family:Georgia,serif;font-weight:normal;font-size:24px;margin:0 0 8px">${t.titulo}</h1>
+<p style="margin:0 0 4px;color:#6B4A35">Hola ${escH(String(f[I.nombre]).split(" ")[0])}, pedido <b>#${cod}</b></p>
+<p style="line-height:1.5">${t.texto}</p>
+<table style="width:100%;border-collapse:collapse;font-size:14px;margin-top:12px">${filas}
+${envio ? `<tr><td style="padding:4px 0">Envío</td><td style="padding:4px 0;text-align:right">${pesos(envio)}</td></tr>` : ""}
+<tr><td style="padding:8px 0;border-top:1px solid #E6DDD2"><b>Total</b></td><td style="padding:8px 0;border-top:1px solid #E6DDD2;text-align:right"><b>${pesos(f[I.total])}</b></td></tr></table>
+<p style="font-size:14px;margin:14px 0 0">${dia ? "📅 Entrega el <b>" + dia + "</b><br>" : ""}${entrega}</p>${boton}
+<p style="font-size:12px;color:#8a7a6c;margin-top:24px;text-align:center">Alfajores Vicencio · <a href="${PAGINA}" style="color:#8a7a6c">alfajoresvicencio.cl</a> · @alfajores_vicencio</p>
+</div></div>`;
+}
+
+// Envía el correo una sola vez por tipo y lo anota en la columna "correos". Nunca rompe el flujo si falla.
+function enviarCorreo(h, n, tipo) {
+  try {
+    if (!TEXTOS_CORREO[tipo]) return "tipo";
+    if (!n) n = h.getLastRow();
+    const I = {}; COLUMNAS.forEach((k, i) => I[k] = i);
+    const f = h.getRange(n, 1, 1, COLUMNAS.length).getValues()[0];
+    const para = String(f[I.correo] || "").trim();
+    if (!para) return "sin correo";
+    const hechos = String(f[I.correos] || "").split(",").filter(Boolean);
+    if (hechos.indexOf(tipo) >= 0) return "ya enviado";
+    MailApp.sendEmail({ to: para, subject: TEXTOS_CORREO[tipo].asunto + " · #" + codigoCorto(f[0]) + " · Alfajores Vicencio",
+                        htmlBody: cuerpoCorreo(f, I, tipo), name: "Alfajores Vicencio" });
+    hechos.push(tipo);
+    h.getRange(n, I.correos + 1).setValue(hechos.join(","));
+    return "ok";
+  } catch (e) {
+    return "error: " + e;
+  }
+}
+
+function correoDesdeErp(d) {
+  const h = hoja(), x = buscarFila(h, String(d.ref || ""));
+  if (!x) return json({ ok: false, error: "Pedido no encontrado en la nube." });
+  const r = enviarCorreo(h, x.n, String(d.tipo || ""));
+  return json({ ok: r === "ok" || r === "ya enviado" || r === "sin correo", resultado: r, error: r });
 }

@@ -432,7 +432,7 @@ function dibujarPaso3(ped, pago) {
     <div class="mut xs" style="padding-top:8px">Al terminar vuelves a esta página y el pago <b>se confirma al instante</b>.</div></div>`;
   const elegido = c.mp ? st.medio : "tef";
   $("#cuerpo").innerHTML = indicador() + `
-  <div class="card"><h2 class="tit">Pago</h2><div class="mut sm">¡Gracias! Tu pedido quedó anotado. ${c.mp ? "Elige cómo quieres pagar:" : "Solo faltan 3 cosas:"}</div>
+  <div class="card"><h2 class="tit">Pago${ped.codigo ? ` <span class="mut" style="font-size:15px;font-weight:400">· pedido #${esc(ped.codigo)}</span>` : ""}</h2><div class="mut sm">¡Gracias! Tu pedido${ped.codigo ? ` <b>#${esc(ped.codigo)}</b>` : ""} quedó anotado${ped.codigo ? " y te enviamos un correo con el resumen" : ""}. ${c.mp ? "Elige cómo quieres pagar:" : "Solo faltan 3 cosas:"}</div>
     ${st.compOk ? "" : `<button class="btn sec" id="cambiar" style="height:40px;margin-top:10px;padding:0 14px;font-size:14px">← Cambiar mi pedido</button>`}</div>
   <div class="card" style="margin-top:12px"><div style="font-weight:600;font-size:16px;margin-bottom:6px">Resumen de tu pedido</div>
     ${ped.lineas.map((l) => `<div class="fila sm"><span>${l.cantidad} × ${esc(l.nombre)}</span><span>${peso(l.cantidad * l.precio)}</span></div>`).join("")}
