@@ -39,7 +39,7 @@ input:focus,textarea:focus{border-color:var(--pri);box-shadow:0 0 0 1px var(--pr
 .pref{display:flex;align-items:center;gap:8px;height:56px;padding:0 14px;border:1px solid var(--bor2);border-radius:6px;background:var(--hov);font-weight:600;flex-shrink:0}
 .pref svg{width:30px;height:20px;border-radius:3px;box-shadow:0 0 0 1px rgba(0,0,0,.15)}
 .trampa{position:absolute;left:-9999px;opacity:0;height:0;width:0}
-.barra{position:fixed;left:0;right:0;bottom:0;background:var(--sup);border-top:1px solid var(--bor);padding:10px 14px calc(10px + env(safe-area-inset-bottom,0px))}
+.barra{position:fixed;z-index:5;left:0;right:0;bottom:0;background:var(--sup);border-top:1px solid var(--bor);padding:10px 14px calc(10px + env(safe-area-inset-bottom,0px))}
 .barra .in{max-width:460px;margin:0 auto;display:flex;align-items:center;justify-content:space-between;gap:10px}
 .barra .tot{font-size:20px;font-weight:700;line-height:1.1}
 .btn{height:52px;border-radius:14px;border:0;font:inherit;font-size:16px;font-weight:600;background:var(--pri);color:var(--fg);padding:0 22px;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:8px;text-decoration:none;touch-action:manipulation}
@@ -61,13 +61,20 @@ hr{border:0;border-top:1px solid var(--bor);margin:8px 0}
 .prog{height:6px;border-radius:99px;background:var(--hov);margin-top:8px;overflow:hidden}.prog i{display:block;height:100%;background:var(--pri)}
 .opc input{width:20px;height:20px;margin:2px 0 0;flex-shrink:0;accent-color:var(--pri-t);padding:0}
 select{width:100%;font:inherit;font-size:16px;color:var(--fg);background:var(--sup);border:1px solid var(--bor2);border-radius:6px;padding:15px 14px;outline:none;-webkit-appearance:none;appearance:none}
+.seg{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px}
+.seg button{min-height:64px;border-radius:14px;border:1.5px solid var(--bor2);background:var(--sup);color:var(--fg);font:inherit;font-weight:600;cursor:pointer;padding:8px;line-height:1.2;touch-action:manipulation}
+.seg button small{display:block;font-weight:400;font-size:12px;color:var(--mut);margin-top:2px}
+.seg button.sel{border-color:var(--pri);background:#F6EDE6;box-shadow:inset 0 0 0 1px var(--pri)}
+.atajos{display:flex;gap:6px;flex-wrap:wrap;margin:8px 0 2px}
+.atajos button{min-height:40px;padding:0 12px;border-radius:999px;border:1px solid var(--bor2);background:var(--sup);color:var(--fg);font:inherit;font-size:14px;cursor:pointer;touch-action:manipulation}
+.banda{margin-top:10px;padding:10px 14px;border-radius:12px;background:var(--fg);color:var(--bg);font-size:14px;text-align:center}
 .dias{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
 .dias button{min-height:48px;min-width:88px;padding:6px 10px;border-radius:12px;border:1.5px solid var(--bor2);background:var(--sup);color:var(--fg);font:inherit;cursor:pointer;line-height:1.15;touch-action:manipulation}
 .dias button small{display:block;font-size:12px;color:var(--mut)}
 .dias button.sel{background:var(--pri);border-color:var(--pri);color:#fff}.dias button.sel small{color:#fff}
 .nav{border:1.5px solid var(--pri);background:#F6EDE6}
-.nav h2{margin:0}.tam{display:flex;gap:8px;margin:10px 0}
-.tam button{flex:1;min-height:48px;border-radius:12px;border:1.5px solid var(--bor2);background:var(--sup);color:var(--fg);font:inherit;font-weight:600;cursor:pointer;touch-action:manipulation}
+.nav h2{margin:0}.tam{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin:10px 0}@media (max-width:380px){.tam{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.tam button{min-width:0;min-height:56px;line-height:1.15;padding:6px 4px;border-radius:12px;border:1.5px solid var(--bor2);background:var(--sup);color:var(--fg);font:inherit;font-weight:600;cursor:pointer;touch-action:manipulation}
 .tam button.sel{background:var(--pri);border-color:var(--pri)}
 .cajita{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:8px 0;border-top:1px solid var(--bor)}
 .cajita button.q{border:0;background:transparent;color:var(--pri-t);font:inherit;text-decoration:underline;cursor:pointer;padding:8px}
@@ -96,7 +103,7 @@ const peso = (n) => "$" + Math.round(n).toLocaleString("es-CL");
 const esc = (t) => String(t ?? "").replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const BANDERA = '<svg viewBox="0 0 90 60"><rect width="90" height="60" fill="#fff"/><rect y="30" width="90" height="30" fill="#D52B1E"/><rect width="30" height="30" fill="#0039A6"/><polygon points="15,5 17.5,11.6 24.5,11.9 19,16.3 20.9,23.1 15,19.2 9.1,23.1 11,16.3 5.5,11.9 12.5,11.6" fill="#fff"/></svg>';
 const NOMBRES = ["Carrito", "Envío", "Pago"];
-const st = { paso: 1, cat: null, cant: {}, cajas: [], arma: null, medio: "", fecha: "", codigo: "", entrega: "retiro", comuna: "", otra: "", direccion: "", ref: (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random().toString(36).slice(2)), enviando: false };
+const st = { paso: 1, cat: null, cant: {}, cajas: [], arma: null, medio: "", fecha: "", codigo: "", vista: "", entrega: "retiro", comuna: "", otra: "", direccion: "", ref: (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random().toString(36).slice(2)), enviando: false };
 
 function avisar(t) { const a = $("#aviso"); a.textContent = t; a.style.display = "block"; clearTimeout(avisar.t); avisar.t = setTimeout(() => a.style.display = "none", 3200); }
 function sabor(n) { return String(n).trim().toLowerCase().replace(/^alfajor(es)?\s+(de\s+)?/, ""); }
@@ -142,12 +149,13 @@ function indicador() {
 function dibujarCajas() {
   const el = $("#navidad"); if (!el) return;
   const cj = cajasCat(), a = st.arma;
-  const tams = `<div class="tam">${cj.map((p) => `<button data-t="${p.navidad}" class="${a && a.tam === p.navidad ? "sel" : ""}">${p.navidad} alfajores<br><small style="font-weight:400">${peso(p.precio)}</small></button>`).join("")}</div>`;
+  const tams = `<div class="tam">${cj.map((p) => `<button data-t="${p.navidad}" class="${a && a.tam === p.navidad ? "sel" : ""}"><span style="font-size:18px">${p.navidad}</span> <small style="font-weight:500">alfajores</small><br><small style="font-weight:400">${peso(p.precio)}</small></button>`).join("")}</div>`;
   let cuerpo = "";
   if (a) {
     const c = cj.find((p) => p.navidad === a.tam), falta = a.tam - a.neg - a.bla;
     const precioAlf = (alfajores()[0] || {}).precio || 0;
-    cuerpo = `<div class="fila" style="margin-top:6px"><div style="font-weight:500">⚫ Negro</div><div class="cant"><button data-s="neg" data-d="-1" aria-label="Quitar negro">−</button><span class="num">${a.neg}</span><button class="mas" data-s="neg" data-d="1" aria-label="Sumar negro">+</button></div></div>
+    cuerpo = `<div class="atajos"><button data-a="neg">Todo negro</button><button data-a="mix">Mitad y mitad</button><button data-a="bla">Todo blanco</button></div>
+      <div class="fila" style="margin-top:6px"><div style="font-weight:500">⚫ Negro</div><div class="cant"><button data-s="neg" data-d="-1" aria-label="Quitar negro">−</button><span class="num">${a.neg}</span><button class="mas" data-s="neg" data-d="1" aria-label="Sumar negro">+</button></div></div>
       <div class="fila"><div style="font-weight:500">⚪ Blanco</div><div class="cant"><button data-s="bla" data-d="-1" aria-label="Quitar blanco">−</button><span class="num">${a.bla}</span><button class="mas" data-s="bla" data-d="1" aria-label="Sumar blanco">+</button></div></div>
       <div class="mut sm" style="margin:6px 0">${falta > 0 ? `Elige ${falta} más para completar la caja` : falta < 0 ? "Te pasaste: quita " + (-falta) : "¡Caja completa! 🎁"}</div>
       <button class="btn cp" id="addcaja" ${falta !== 0 ? "disabled" : ""}>Agregar caja · ${peso(c.precio)}</button>`;
@@ -155,6 +163,8 @@ function dibujarCajas() {
   const lista = st.cajas.map((k, i) => `<div class="cajita"><div class="sm">🎁 Caja de ${k.tam} · ${peso((cj.find((p) => p.id === k.cajaId) || {}).precio || 0)}: ${k.neg ? k.neg + " negro" + (k.neg > 1 ? "s" : "") : ""}${k.neg && k.bla ? " y " : ""}${k.bla ? k.bla + " blanco" + (k.bla > 1 ? "s" : "") : ""}</div><button class="q" data-q="${i}">Quitar</button></div>`).join("");
   el.innerHTML = `<h2 class="tit">🎄 Caja de Navidad</h2><div class="mut sm">Caja de regalo con cinta y etiqueta navideña. Tú eliges los sabores.</div>${tams}${cuerpo}${lista}`;
   el.querySelectorAll(".tam button").forEach((b) => b.onclick = () => { const t = Number(b.dataset.t); st.arma = st.arma && st.arma.tam === t ? null : { tam: t, neg: 0, bla: 0 }; dibujarCajas(); });
+  el.querySelectorAll("[data-a]").forEach((b) => b.onclick = () => { const t = st.arma.tam, a = b.dataset.a;
+    st.arma.neg = a === "neg" ? t : a === "bla" ? 0 : Math.ceil(t / 2); st.arma.bla = t - st.arma.neg; dibujarCajas(); });
   el.querySelectorAll("[data-s]").forEach((b) => b.onclick = () => { const k = b.dataset.s, n = st.arma.neg + st.arma.bla + Number(b.dataset.d); if (Number(b.dataset.d) > 0 && n > st.arma.tam) return; st.arma[k] = Math.max(0, st.arma[k] + Number(b.dataset.d)); dibujarCajas(); });
   const ad = $("#addcaja"); if (ad) ad.onclick = () => {
     const c = cj.find((p) => p.navidad === st.arma.tam);
@@ -171,19 +181,30 @@ function dibujarCajas() {
 
 function dibujarPaso1() {
   const c = st.cat, hayCajas = cajasCat().length > 0 && negroId() && blancoId();
+  if (!st.vista) st.vista = hayCajas ? "cajas" : "granel";
+  const vista = hayCajas ? st.vista : "granel";
+  const nSueltos = alfajores().reduce((a, p) => a + (st.cant[p.id] || 0), 0);
+  const precioMin = Math.min(...cajasCat().map((p) => p.precio).concat([Infinity]));
+  const unidad = (alfajores()[0] || {}).precio || 0;
   $("#cuerpo").innerHTML = indicador() + `
-  <div class="card"><h2 class="tit">Tu carrito</h2><div class="mut xs">Toca + para sumar los que quieras.</div>
+  ${c.preventa_hasta && !st.codigo ? `<div class="banda">✨ Precio preventa hasta el <b>${fechaLarga(c.preventa_hasta)}</b></div>` : ""}
+  ${hayCajas ? `<div class="seg" role="tablist">
+    <button data-v="cajas" class="${vista === "cajas" ? "sel" : ""}" role="tab">🎁 Cajas de Navidad<small>${st.cajas.length ? st.cajas.length + " en tu pedido" : "desde " + peso(precioMin)}</small></button>
+    <button data-v="granel" class="${vista === "granel" ? "sel" : ""}" role="tab">Alfajores a granel<small>${nSueltos ? nSueltos + " en tu pedido" : peso(unidad) + " c/u"}</small></button>
+  </div>` : ""}
+  ${vista === "cajas" ? `<div class="card nav" id="navidad" style="margin-top:12px"></div>` : `
+  <div class="card" style="margin-top:12px"><h2 class="tit">Alfajores a granel</h2><div class="mut xs">Toca + para sumar. Para retiro gratis en el metro, mínimo ${c.minimo_granel || 4} alfajores.</div>
     ${alfajores().map((p) => `<div class="fila prod"><div><div style="font-weight:500;font-size:16px">${/negro/i.test(p.nombre) ? "⚫" : "⚪"} ${esc(p.nombre)}</div><div class="mut sm">${peso(p.precio)} c/u</div></div>
       <div class="cant"><button data-id="${p.id}" data-d="-1" aria-label="Quitar">−</button><span class="num" id="n${p.id}">${st.cant[p.id] || 0}</span><button class="mas" data-id="${p.id}" data-d="1" aria-label="Sumar">+</button></div></div>`).join("")}
-  </div>
-  ${hayCajas ? `<div class="card nav" id="navidad" style="margin-top:12px"></div>` : ""}
+  </div>`}
   <div class="card sm" id="falta1" style="margin-top:12px;border-color:var(--pri);background:#F6EDE6" hidden></div>
   ${c.amigo ? (st.codigo ? `<div class="mut sm" style="margin-top:12px;text-align:center">✓ Código aplicado</div>`
     : `<details class="sm" style="margin-top:12px"><summary class="mut" style="cursor:pointer;padding:8px 0">¿Tienes un código?</summary>
       <div class="fila" style="gap:8px"><input id="codigo" autocomplete="off" placeholder="Escribe tu código" style="flex:1"><button class="btn out" id="aplicar" style="width:auto;margin:0;padding:0 16px">Aplicar</button></div></details>`) : ""}
   ${c.whatsapp ? `<a class="btn out" style="margin-top:12px" target="_blank" rel="noopener" href="https://wa.me/${waNum(c.whatsapp)}?text=${encodeURIComponent("Hola! Tengo una consulta sobre los alfajores.")}">💬 ¿Tienes alguna duda? Escríbenos</a>` : ""}`;
   document.querySelectorAll(".cant button[data-id]").forEach((b) => b.onclick = () => { const id = Number(b.dataset.id) || b.dataset.id; st.cant[id] = Math.max(piso(id), Math.min(100, (st.cant[id] || 0) + Number(b.dataset.d))); $("#n" + id).textContent = st.cant[id]; barra(); });
-  if (hayCajas) dibujarCajas();
+  if (vista === "cajas") dibujarCajas();
+  document.querySelectorAll(".seg button").forEach((b) => b.onclick = () => { st.vista = b.dataset.v; dibujarPaso1(); barra(); });
   const ap = $("#aplicar"); if (ap) ap.onclick = aplicarCodigo;
 }
 
@@ -205,6 +226,14 @@ const MESES = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "
 const DIAS = ["domingo", "lunes", "martes", "miércoles", "jueves", "viernes", "sábado"];
 function fechaObj(f) { const p = f.split("-").map(Number); return new Date(p[0], p[1] - 1, p[2]); }
 function fechaLarga(f) { const d = fechaObj(f); return `${DIAS[d.getDay()]} ${d.getDate()} de ${MESES[d.getMonth()]}`; }
+// "Pide hasta el domingo 13 a las 20:00" o, si queda menos de un día, "Cierra en 5 h".
+function textoCierre(c) {
+  const [f, h] = c.split(" "), p = f.split("-").map(Number), hh = h.split(":").map(Number);
+  const fin = new Date(p[0], p[1] - 1, p[2], hh[0], hh[1]), falta = fin - Date.now();
+  if (falta > 0 && falta < 864e5) { const hrs = Math.floor(falta / 36e5), min = Math.max(1, Math.round((falta % 36e5) / 6e4));
+    return `⏳ Para este día <b>cierra en ${hrs ? hrs + " h " : ""}${hrs ? "" : min + " min"}</b>`; }
+  return `⏳ Para este día, pide hasta el <b>${fechaLarga(f)} a las ${h}</b>`;
+}
 function agendaActiva() { return !!(st.cat.agenda && st.cat.agenda.activo); }
 function diasPosibles() { const u = totales()[1]; return ((st.cat.agenda || {}).dias || []).filter((x) => x.libre >= u); }
 
@@ -227,12 +256,12 @@ function dibujarPaso2() {
     <div class="tel"><div class="pref">${BANDERA}<span>+569</span></div><input id="tel" inputmode="numeric" pattern="[0-9]*" autocomplete="off" placeholder="1234 5678" value="${esc(st.tel || "")}"></div>
     <div class="xs mut" id="ayuda" style="margin-top:4px">Escribe solo los 8 números que siguen al +569</div>
     <label class="c" for="correo">Tu correo</label><input id="correo" type="email" inputmode="email" autocomplete="email" placeholder="nombre@gmail.com" value="${esc(st.correo || "")}">
-    <div class="xs mut" style="margin-top:4px">Por si no logramos contactarte por WhatsApp. No enviamos publicidad.</div>
+    <div class="xs mut" style="margin-top:4px">Para enviarte la confirmación y el estado de tu pedido. No enviamos publicidad.</div>
     <input class="trampa" id="trampa" tabindex="-1" autocomplete="off" aria-hidden="true">
   </div>
   ${agendaActiva() ? `<div class="card" style="margin-top:12px"><h2 class="tit">Día de entrega</h2>
-    ${diasPosibles().length ? `<div class="mut sm">Elige qué día quieres recibir tu pedido.</div><div class="dias">${diasPosibles().map((x) => { const d = fechaObj(x.fecha);
-      return `<button data-f="${x.fecha}" class="${st.fecha === x.fecha ? "sel" : ""}">${DIAS[d.getDay()].slice(0, 3)}<b style="display:block;font-size:18px">${d.getDate()}</b><small>${MESES[d.getMonth()].slice(0, 3)}</small></button>`; }).join("")}</div>`
+    ${diasPosibles().length ? `<div class="mut sm">Elige qué día quieres recibir tu pedido.</div><div class="dias" role="radiogroup">${diasPosibles().map((x) => { const d = fechaObj(x.fecha);
+      return `<button data-f="${x.fecha}" class="${st.fecha === x.fecha ? "sel" : ""}">${DIAS[d.getDay()].slice(0, 3)}<b style="display:block;font-size:18px">${d.getDate()}</b><small>${MESES[d.getMonth()].slice(0, 3)}</small></button>`; }).join("")}</div><div class="sm" id="limite" style="margin-top:8px"></div>`
       : `<div class="sm" style="margin-top:4px">Ya no quedan días disponibles para este pedido 🙏</div><div class="mut sm" style="margin-top:4px">Escríbenos por WhatsApp o Instagram @alfajores_vicencio y vemos cómo ayudarte.</div>`}
   </div>` : ""}
   <div class="card" style="margin-top:12px"><h2 class="tit">Método de envío</h2>
@@ -280,8 +309,11 @@ function dibujarPaso2() {
   tel.addEventListener("input", () => { tel.value = limpiar(tel.value); st.tel = tel.value; ayuda(); });
   tel.addEventListener("paste", (e) => { e.preventDefault(); tel.value = limpiar((e.clipboardData || window.clipboardData).getData("text")); st.tel = tel.value; ayuda(); });
   if (agendaActiva() && st.fecha && !diasPosibles().some((x) => x.fecha === st.fecha)) st.fecha = "";
+  const limite = () => { const el = $("#limite"); if (!el) return; const d = diasPosibles().find((x) => x.fecha === st.fecha);
+    el.innerHTML = d && d.cierre ? textoCierre(d.cierre) : ""; };
   document.querySelectorAll(".dias button").forEach((b) => b.onclick = () => { st.fecha = b.dataset.f;
-    document.querySelectorAll(".dias button").forEach((x) => x.classList.toggle("sel", x === b)); });
+    document.querySelectorAll(".dias button").forEach((x) => x.classList.toggle("sel", x === b)); limite(); });
+  limite();
   $("#nombre").oninput = (e) => st.nombre = e.target.value;
   $("#correo").oninput = (e) => st.correo = e.target.value.trim();
   ayuda();
@@ -436,6 +468,8 @@ async function enviar() {
   if (tel.length !== 8) { avisar("Escribe los 8 números de tu celular, los que van después del +569."); return; }
   if ((st.nombre || "").trim().length < 2) { avisar("Escribe tu nombre."); return; }
   if (!/^[^@\s]+@[^@\s]+\.[^@\s]{2,}$/.test((st.correo || "").trim())) { avisar("Escribe un correo válido, por ejemplo nombre@gmail.com."); return; }
+  const fg = faltaGranel();
+  if (fg && !(st.entrega === "despacho" && despachoActivo())) { avisar(`Para retiro gratis en el metro, el mínimo es de ${st.cat.minimo_granel || 4} alfajores. Agrega ${fg} más o elige entrega a domicilio.`); return; }
   if (agendaActiva()) {
     if (!diasPosibles().length) { avisar("Ya no quedan días disponibles para este pedido. Escríbenos por WhatsApp."); return; }
     if (!st.fecha) { avisar("Elige el día de entrega."); return; }
@@ -467,6 +501,8 @@ async function enviar() {
 }
 
 $("#atras").onclick = () => irA(1);
+function faltaGranel() { const min = st.cat.minimo_granel || 4, n = alfajores().reduce((a, p) => a + (st.cant[p.id] || 0), 0);
+  return !st.cajas.length && n > 0 && n < min ? min - n : 0; }
 $("#sig").onclick = () => { if (st.paso === 1) { if (totales()[1] > 0) irA(2); } else enviar(); };
 
 async function irAPagarMp(ref, boton) {

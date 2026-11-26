@@ -40,11 +40,13 @@ function calcularEnvio(c, subtotal, entrega, comuna) {
 // La página pública pide aquí el catálogo (sin datos de pago).
 function doGet(e) {
   const c = leerCfg();
-  const ag = c.agenda && c.agenda.desde ? { activo: true, dias: diasDisponibles(c, null).map(x => ({ fecha: x.fecha, libre: x.libre })) } : { activo: false };
+  const ag = c.agenda && c.agenda.desde ? { activo: true, dias: diasDisponibles(c, null).map(x => ({ fecha: x.fecha, libre: x.libre, cierre: x.cierre })) } : { activo: false };
+  const hoy = hoySantiago(); let cambio = "";
+  (c.productos || []).forEach(p => (p.tramos || []).forEach(t => { if (String(t.desde) > hoy && (!cambio || String(t.desde) < cambio)) cambio = String(t.desde); }));
   return json({ ok: true, activo: c.activo !== false && (c.productos || []).length > 0,
                 productos: (c.productos || []).map(p => publico(p, false)),
                 entrega: c.entrega || "", whatsapp: c.whatsapp || "", despacho: c.despacho || { activo: false }, mp: !!(c.mp && mpToken()),
-                amigo: !!amigoCodigo(), agenda: ag });
+                amigo: !!amigoCodigo(), agenda: ag, preventa_hasta: cambio ? sumarDias(cambio, -1) : "", minimo_granel: MINIMO_GRANEL });
 }
 
 function doPost(e) {
@@ -121,6 +123,9 @@ function crearPedido(d) {
       total += cant * precio; unidades += cant * (Number(p.navidad) || 1);
     });
     if (unidades <= 0) return json({ ok: false, error: "Elige al menos 1 alfajor." });
+    const sueltos = lineas.filter(l => !(catalogo[l.producto_id] || {}).navidad).reduce((a, l) => a + l.cantidad, 0);
+    const retiro = !(d.entrega === "despacho" && (c.despacho || {}).activo);
+    if (retiro && sueltos === unidades && sueltos < MINIMO_GRANEL) return json({ ok: false, error: "Para retiro gratis en el metro, el mínimo es de " + MINIMO_GRANEL + " alfajores." });
     let fechaEntrega = "";
     if (c.agenda && c.agenda.desde) {
       fechaEntrega = String(d.fecha_entrega || "").substring(0, 10);
@@ -443,6 +448,7 @@ function marcarPagosMp(refs) {
 }
 
 // ---------- Precios por fecha, código amigo y días de entrega con cupo ----------
+const MINIMO_GRANEL = 4;   // retiro gratis sin cajas: al menos 4 alfajores sueltos (con despacho pagado no hay mínimo)
 function hoySantiago() { return Utilities.formatDate(new Date(), "America/Santiago", "yyyy-MM-dd"); }
 
 // Precio del producto hoy: el último tramo cuya fecha 'desde' ya llegó (el ERP publica los cambios de precio futuros).
@@ -509,9 +515,10 @@ function diasDisponibles(c, filas) {
   const ahora = Utilities.formatDate(new Date(), "America/Santiago", "yyyy-MM-dd HH:mm");
   const salida = [];
   for (let d = String(a.desde), n = 0; d <= String(a.hasta) && n < 120; d = sumarDias(d, 1), n++) {
-    if (ahora >= sumarDias(d, -antes) + " " + hora) continue;   // ya cerró
+    const cierre = sumarDias(d, -antes) + " " + hora;
+    if (ahora >= cierre) continue;   // ya cerró
     const libre = cupo - (ocupado[d] || 0);
-    if (libre > 0) salida.push({ fecha: d, libre: libre });
+    if (libre > 0) salida.push({ fecha: d, libre: libre, cierre: cierre });
   }
   return salida;
 }
