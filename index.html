@@ -360,7 +360,7 @@ function dibujarPaso3(ped, pago) {
   const desp = (ped.entrega || st.entrega) === "despacho";
   const comuna = ped.comuna || comunaElegida(), dir = ped.direccion || st.direccion;
   const envio = Number(ped.envio || 0), coordinar = false;
-  // En el celular se usa wa.me. En computador, wa.me abre la app de escritorio y esta pierde los emojis ("�"),
+  // En el celular se usa wa.me. En computador, wa.me abre la app de escritorio y esta pierde los emojis ("U+FFFD"),
   // así que se abre WhatsApp Web directamente, que sí los respeta.
   const movil = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent), e = (x) => x + " ";
   const enlaceWa = (t) => (movil ? "https://wa.me/" + waNum(c.whatsapp) + "?text=" : "https://web.whatsapp.com/send?phone=" + waNum(c.whatsapp) + "&text=") + encodeURIComponent(t);
