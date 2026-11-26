@@ -291,6 +291,9 @@ function textoCierre(c) {
 function pctDesc(p) { return p.antes ? Math.round((1 - p.precio / p.antes) * 100) : 0; }
 function precioTxt(p) { return p.antes ? `${peso(p.precio)} <s style="opacity:.6;font-weight:400">${peso(p.antes)}</s> <span class="dcto">-${pctDesc(p)}%</span>` : peso(p.precio); }
 function hoyLocal() { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; }
+const FERIADOS = ["2026-12-08", "2026-12-25", "2027-01-01"];   // mismos que en el servidor
+function esHabil(f) { const d = fechaObj(f).getDay(); return d !== 0 && d !== 6 && !FERIADOS.includes(f); }
+function sumarHabiles(f, n) { let x = f; while (n > 0) { x = sumarDiasLocal(x, 1); if (esHabil(x)) n--; } return x; }
 function sumarDiasLocal(f, n) { const d = fechaObj(f); d.setDate(d.getDate() + n); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; }
 // La campaña de Navidad terminó si hay agenda pero ya no quedan días: entonces no se ofrecen las cajas.
 function campanaCerrada() { const a = st.cat && st.cat.agenda; return !!(a && a.activo && !(a.dias || []).length); }
@@ -325,9 +328,9 @@ function dibujarPaso2() {
       : `<div class="sm" style="margin-top:4px">Ya no quedan días disponibles para este pedido 🙏</div><div class="mut sm" style="margin-top:4px">Escríbenos por WhatsApp o Instagram @alfajores_vicencio y vemos cómo ayudarte.</div>`}
   </div>` : ""}
   ${!agendaActiva() ? `<div class="card" style="margin-top:12px"><h2 class="tit">¿Cuándo lo quieres?</h2>
-    <label class="opc ${!st.programar ? "sel" : ""}" id="pr_no"><input type="radio" name="prog" value="no" ${!st.programar ? "checked" : ""}><div><b style="font-weight:600">Lo antes posible</b><div class="mut sm">Te escribimos por WhatsApp para coordinar el día y la hora.</div></div></label>
-    <label class="opc ${st.programar ? "sel" : ""}" id="pr_si"><input type="radio" name="prog" value="si" ${st.programar ? "checked" : ""}><div style="flex:1"><b style="font-weight:600">Programar para un día</b><div class="mut sm">Desde ${fechaLarga(sumarDiasLocal(hoyLocal(), 2))}.</div>
-      ${st.programar ? `<input type="date" id="fprog" min="${sumarDiasLocal(hoyLocal(), 2)}" max="${sumarDiasLocal(hoyLocal(), 60)}" value="${esc(st.fechaProg)}" style="margin-top:8px;width:100%;min-height:48px">` : ""}</div></label>
+    <label class="opc ${!st.programar ? "sel" : ""}" id="pr_no"><input type="radio" name="prog" value="no" ${!st.programar ? "checked" : ""}><div><b style="font-weight:600">Lo antes posible</b><div class="mut sm">Te lo entregamos dentro de 2 días hábiles. Coordinamos la hora por WhatsApp.</div></div></label>
+    <label class="opc ${st.programar ? "sel" : ""}" id="pr_si"><input type="radio" name="prog" value="si" ${st.programar ? "checked" : ""}><div style="flex:1"><b style="font-weight:600">Programar para un día</b><div class="mut sm">Lunes a viernes, desde el ${fechaLarga(sumarHabiles(hoyLocal(), 2))}.</div>
+      ${st.programar ? `<input type="date" id="fprog" min="${sumarHabiles(hoyLocal(), 2)}" max="${sumarDiasLocal(hoyLocal(), 60)}" value="${esc(st.fechaProg)}" style="margin-top:8px;width:100%;min-height:48px">` : ""}</div></label>
   </div>` : ""}
   <div class="card" style="margin-top:12px"><h2 class="tit">Método de envío</h2>
     <label class="opc ${st.entrega === "retiro" || !act ? "sel" : ""}" id="o_retiro"><input type="radio" name="ent" value="retiro" ${st.entrega === "retiro" || !act ? "checked" : ""}>
@@ -469,7 +472,7 @@ function dibujarPaso3(ped, pago) {
   ${elegido ? `<div class="card" style="margin-top:12px"><div class="fila" style="justify-content:flex-start"><span class="mini">${elegido === "mp" ? 2 : 3}</span><b style="font-size:16px">Coordinamos la entrega</b></div>
     ${ped.fecha_entrega ? `<div class="sm" style="margin-top:6px">📅 <b>${fechaLarga(ped.fecha_entrega)}</b></div>` : ""}
     ${desp ? `<div class="sm" style="margin-top:4px">🚗 A domicilio: ${esc(dir)}, ${esc(comuna)}</div>` : `<div class="sm" style="margin-top:4px">🚇 Metro Escuela Militar</div>`}
-    <div class="mut sm" style="margin-top:4px">Apenas ${elegido === "mp" ? "se confirme tu pago" : "recibamos tu comprobante"}, <b>te escribimos por WhatsApp</b> para coordinar ${ped.fecha_entrega ? "la hora" : "el día y la hora"} de la entrega.</div></div>` : ""}
+    <div class="mut sm" style="margin-top:4px">Apenas ${elegido === "mp" ? "se confirme tu pago" : "recibamos tu comprobante"}, <b>te escribimos por WhatsApp</b> para coordinar la hora de la entrega${ped.fecha_entrega ? "" : " (dentro de 2 días hábiles)"}.</div></div>` : ""}
   ${c.whatsapp ? `<a class="btn out" style="margin-top:12px" target="_blank" rel="noopener" href="https://wa.me/${waNum(c.whatsapp)}?text=${encodeURIComponent("Hola! Tengo una consulta sobre mi pedido de " + frase(ped.lineas) + ".")}">💬 Tengo una consulta</a>` : ""}
   <p class="mut sm" style="text-align:center">${st.compOk ? "Puedes cerrar esta página." : "Si necesitas cerrar esta página, en tu correo tienes el botón para volver a pagar."} ¡Gracias por apoyar a Alfajores Vicencio! 🤎</p>`;
   document.querySelectorAll('input[name="medio"]').forEach((r) => r.onchange = () => { st.medio = r.value; dibujarPaso3(ped, pago); });
@@ -581,9 +584,10 @@ async function enviar() {
   const fg = faltaGranel();
   if (fg && !(st.entrega === "despacho" && despachoActivo())) { avisar(`Para retiro gratis en el metro, el mínimo es de ${st.cat.minimo_granel || 4} alfajores. Agrega ${fg} más o elige entrega a domicilio.`); return; }
   if (!agendaActiva() && st.programar) {
-    const f = st.fechaProg, min = sumarDiasLocal(hoyLocal(), 2), max = sumarDiasLocal(hoyLocal(), 60);
+    const f = st.fechaProg, min = sumarHabiles(hoyLocal(), 2), max = sumarDiasLocal(hoyLocal(), 60);
     if (!f) { avisar("Elige el día para programar tu pedido, o marca «Lo antes posible»."); return; }
     if (f < min || f > max) { avisar(`Puedes programar desde el ${fechaLarga(min)}.`); return; }
+    if (!esHabil(f)) { avisar("Entregamos de lunes a viernes (sin feriados). Elige otro día."); return; }
   }
   if (agendaActiva()) {
     if (!diasPosibles().length) { avisar("Ya no quedan días disponibles para este pedido. Escríbenos por WhatsApp."); return; }
@@ -652,7 +656,7 @@ async function volvioDeMp(ref) {
   }
   if (d.pagado) {
     $("#cuerpo").innerHTML = `<div class="card"><div style="background:#E4EBDF;color:var(--ok);border-radius:12px;padding:12px 14px"><b>✅ ¡Pago recibido!</b>
-      <div class="sm" style="margin-top:2px">Tu pedido quedó confirmado. Te escribimos por WhatsApp para coordinar el día y la hora de la entrega.</div></div></div>
+      <div class="sm" style="margin-top:2px">Tu pedido quedó confirmado. Te escribimos por WhatsApp para coordinar la hora de la entrega.</div></div></div>
       <p class="mut sm" style="text-align:center">Puedes cerrar esta página. ¡Gracias por apoyar a Alfajores Vicencio! 🤎</p>`;
   } else {
     $("#cuerpo").innerHTML = `<div class="card"><b>Aún no vemos tu pago</b>

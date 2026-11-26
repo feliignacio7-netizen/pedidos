@@ -136,8 +136,8 @@ function crearPedido(d) {
     const pedida = String(d.fecha_entrega || "").substring(0, 10);
     const enCampana = c.agenda && c.agenda.desde && pedida >= String(c.agenda.desde) && pedida <= String(c.agenda.hasta);
     if (!conCajas && pedida && !enCampana) {   // granel programado fuera de la campaña: desde 2 días después y hasta 60 días
-      if (!/^\d{4}-\d{2}-\d{2}$/.test(pedida) || pedida < sumarDias(hoySantiago(), DIAS_MIN_PROGRAMAR) || pedida > sumarDias(hoySantiago(), 60))
-        return json({ ok: false, error: "Elige una fecha desde " + DIAS_MIN_PROGRAMAR + " días después de hoy." });
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(pedida) || pedida < sumarHabiles(hoySantiago(), DIAS_MIN_PROGRAMAR) || pedida > sumarDias(hoySantiago(), 60) || !esHabil(pedida))
+        return json({ ok: false, error: "Elige un día hábil (lunes a viernes, sin feriados) desde " + fechaBonita(sumarHabiles(hoySantiago(), DIAS_MIN_PROGRAMAR)) + "." });
       fechaEntrega = pedida;
     } else if (c.agenda && c.agenda.desde && (conCajas || enCampana)) {   // Cajas de Navidad, o granel en días de campaña: días con cupo
       fechaEntrega = String(d.fecha_entrega || "").substring(0, 10);
@@ -462,7 +462,11 @@ function marcarPagosMp(refs) {
 }
 
 // ---------- Precios por fecha, código amigo y días de entrega con cupo ----------
-const DIAS_MIN_PROGRAMAR = 2;   // un pedido a granel se puede programar desde 2 días después de hoy
+const DIAS_MIN_PROGRAMAR = 2;   // un pedido a granel se entrega (o programa) desde 2 días hábiles después de hoy
+// Feriados de Chile (lun-vie) en los que no se entrega granel. Agregar los del año siguiente cuando corresponda.
+const FERIADOS = ["2026-12-08", "2026-12-25", "2027-01-01"];
+function esHabil(f) { const p = f.split("-").map(Number), d = new Date(Date.UTC(p[0], p[1] - 1, p[2])).getUTCDay(); return d !== 0 && d !== 6 && FERIADOS.indexOf(f) < 0; }
+function sumarHabiles(f, n) { let x = f; while (n > 0) { x = sumarDias(x, 1); if (esHabil(x)) n--; } return x; }
 const MINIMO_GRANEL = 4;   // retiro gratis sin cajas: al menos 4 alfajores sueltos (con despacho pagado no hay mínimo)
 function hoySantiago() { return Utilities.formatDate(new Date(), "America/Santiago", "yyyy-MM-dd"); }
 
@@ -567,6 +571,7 @@ function escH(t) { return String(t || "").replace(/[&<>"]/g, c => ({ "&": "&amp;
 
 const TEXTOS_CORREO = {
   recibido: { asunto: "Recibimos tu pedido", titulo: "¡Recibimos tu pedido!", texto: "Tu pedido quedó anotado. Si aún no pagas, puedes hacerlo con tarjeta o transferencia con el botón de abajo. Lo reservamos por 2 horas; si no recibimos el pago, se libera." },
+  recordatorio: { asunto: "Tu pedido te está esperando", titulo: "¿Se te quedó algo? 🤎", texto: "Vimos que dejaste tu pedido pero aún no nos llega el pago. Te lo tenemos guardado un ratito más: para reservarlo solo falta pagar con el botón de abajo (tarjeta o transferencia). Si ya pagaste, ignora este correo. ¡Gracias!" },
   pagado: { asunto: "Pago confirmado", titulo: "Pago confirmado ✅", texto: "Recibimos tu pago. Tu pedido está confirmado y te escribiremos por WhatsApp para coordinar la hora de entrega." },
   listo: { asunto: "Tu pedido está listo", titulo: "Tu pedido está listo 🎁", texto: "Ya está listo para retirar en el metro Escuela Militar. Coordinamos la hora por WhatsApp." },
   en_camino: { asunto: "Tu pedido va en camino", titulo: "Tu pedido va en camino 🚗", texto: "Salió hacia tu dirección. Te avisaremos por WhatsApp al llegar." },
@@ -580,7 +585,8 @@ function cuerpoCorreo(f, I, tipo) {
   const envio = Number(f[I.envio] || 0), desp = String(f[I.entrega]) === "despacho";
   const dia = fechaBonita(f[I.fecha_entrega]);
   const entrega = desp ? `🚗 Despacho a ${escH(f[I.direccion])}, ${escH(f[I.comuna])}` : "🚇 Retiro en metro Escuela Militar";
-  const pagar = tipo === "recibido" && !String(f[I.mp_pago] || "") ? `<p style="text-align:center;margin:24px 0"><a href="${PAGINA}/?pagar=${encodeURIComponent(ref)}" style="background:#BC7B69;color:#2A1A12;text-decoration:none;padding:12px 22px;border-radius:999px;font-weight:600">Pagar mi pedido</a></p>` : "";
+  if (tipo === "recordatorio" && (String(f[I.mp_pago] || "") || String(f[I.anulado] || ""))) return "";
+  const pagar = (tipo === "recibido" || tipo === "recordatorio") && !String(f[I.mp_pago] || "") ? `<p style="text-align:center;margin:24px 0"><a href="${PAGINA}/?pagar=${encodeURIComponent(ref)}" style="background:#BC7B69;color:#2A1A12;text-decoration:none;padding:12px 22px;border-radius:999px;font-weight:600">Pagar mi pedido</a></p>` : "";
   const boton = pagar || (tipo === "entregado" ? `<p style="text-align:center;margin:24px 0"><a href="${PAGINA}/opinion.html?p=${encodeURIComponent(ref)}" style="background:#BC7B69;color:#2A1A12;text-decoration:none;padding:12px 22px;border-radius:999px;font-weight:600">Dejar mi opinión</a></p>` : "");
   return `<div style="background:#F3EEE6;padding:24px 12px;font-family:Helvetica,Arial,sans-serif;color:#2A1A12">
 <div style="max-width:520px;margin:0 auto;background:#fff;border-radius:16px;padding:28px 24px">
@@ -608,8 +614,10 @@ function enviarCorreo(h, n, tipo) {
     if (!para) return "sin correo";
     const hechos = String(f[I.correos] || "").split(",").filter(Boolean);
     if (hechos.indexOf(tipo) >= 0) return "ya enviado";
+    const cuerpo = cuerpoCorreo(f, I, tipo);
+    if (!cuerpo) return "ya enviado";   // recordatorio de un pedido ya pagado o anulado: no se manda
     MailApp.sendEmail({ to: para, subject: TEXTOS_CORREO[tipo].asunto + " · #" + codigoCorto(f[0]) + " · Alfajores Vicencio",
-                        htmlBody: cuerpoCorreo(f, I, tipo), name: "Alfajores Vicencio" });
+                        htmlBody: cuerpo, name: "Alfajores Vicencio" });
     hechos.push(tipo);
     h.getRange(n, I.correos + 1).setValue(hechos.join(","));
     return "ok";
