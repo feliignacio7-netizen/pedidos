@@ -350,7 +350,7 @@ function mpLink(d) {
     const lineas = JSON.parse(x.f[I.lineas] || "[]");
     const detalle = lineas.map(l => l.cantidad + " × " + l.nombre).join(", ").substring(0, 250);
     let volver = String(d.volver || "");
-    if (!/^https:\/\/[a-z0-9-]+\.github\.io\/[A-Za-z0-9_\-\/.]*$/.test(volver)) volver = "";
+    if (!/^https:\/\/([a-z0-9-]+\.github\.io|(www\.|pedidos\.)?alfajoresvicencio\.cl)\/[A-Za-z0-9_\-\/.]*$/.test(volver)) volver = "";
     const pref = { items: [{ id: ref, title: "Alfajores Vicencio", description: detalle, quantity: 1, unit_price: total, currency_id: "CLP" }],
                    external_reference: ref, statement_descriptor: "VICENCIO",
                    payer: { name: String(x.f[I.nombre] || ""), email: String(x.f[I.correo] || "") || undefined } };
