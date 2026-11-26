@@ -188,7 +188,8 @@ function dibujarPaso1() {
   const unidad = (alfajores()[0] || {}).precio || 0;
   $("#cuerpo").innerHTML = indicador() + `
   ${st.codigo ? `<div class="banda">🤝 Precio especial con código</div>`
-    : c.preventa_hasta && c.productos.some((p) => p.antes) ? `<div class="banda">🔥 <b>Descuento Cyber</b>: alfajor a ${peso(unidad)} <s style="opacity:.7">${peso((alfajores()[0] || {}).antes || 0)}</s> hasta el <b>${fechaLarga(c.preventa_hasta)}</b></div>` : ""}
+    : (alfajores()[0] || {}).antes ? `<div class="banda">🔥 <b>Descuento Cyber</b>: alfajor a ${peso(unidad)} <s style="opacity:.7">${peso(alfajores()[0].antes)}</s>${alfajores()[0].hasta ? ` hasta el <b>${fechaLarga(alfajores()[0].hasta)}</b>` : ""}</div>`
+    : (alfajores()[0] || {}).luego ? `<div class="banda">🔥 <b>Cyber</b> desde el <b>${fechaLarga(alfajores()[0].luego.desde)}</b>${alfajores()[0].luego.hasta ? ` al ${fechaLarga(alfajores()[0].luego.hasta)}` : ""}: alfajor a ${peso(alfajores()[0].luego.precio)}</div>` : ""}
   ${hayCajas ? `<div class="seg" role="tablist">
     <button data-v="cajas" class="${vista === "cajas" ? "sel" : ""}" role="tab">🎁 Cajas de Navidad<small>${st.cajas.length ? st.cajas.length + " en tu pedido" : "desde " + precioTxt(cajasCat().reduce((a, p) => (!a || p.precio < a.precio ? p : a), null) || {})}</small></button>
     <button data-v="granel" class="${vista === "granel" ? "sel" : ""}" role="tab">Alfajores a granel<small>${nSueltos ? nSueltos + " en tu pedido" : precioTxt(alfajores()[0] || {}) + " c/u"}</small></button>

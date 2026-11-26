@@ -468,6 +468,15 @@ function publico(p, amigo) {
   let antes = amigo ? normalHoy : 0;
   (p.tramos || []).forEach(t => { if (String(t.desde) > hoy && Number(t.precio) > antes) antes = Number(t.precio); });
   if (antes > x.precio) x.antes = antes;
+  // Hasta cuándo dura el descuento (día antes de que suba) y próximo descuento programado (para anunciarlo).
+  const futuros = (p.tramos || []).filter(t => String(t.desde) > hoy).sort((a, b) => String(a.desde) < String(b.desde) ? -1 : 1);
+  const sube = futuros.filter(t => Number(t.precio) > normalHoy)[0];
+  if (!amigo && x.antes && sube) x.hasta = sumarDias(String(sube.desde), -1);
+  const baja = futuros.filter(t => Number(t.precio) < normalHoy)[0];
+  if (!amigo && baja) {
+    const fin = futuros.filter(t => String(t.desde) > String(baja.desde) && Number(t.precio) > Number(baja.precio))[0];
+    x.luego = { desde: String(baja.desde), precio: Number(baja.precio), hasta: fin ? sumarDias(String(fin.desde), -1) : "" };
+  }
   if (p.navidad) x.navidad = p.navidad;
   return x;
 }
