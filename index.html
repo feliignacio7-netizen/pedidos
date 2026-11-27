@@ -144,6 +144,7 @@ function preguntar(titulo, texto, botones, alCerrar) {
 const CAMPOS_SESION = ["paso", "ref", "cant", "cajas", "codigo", "vista", "entrega", "comuna", "otra", "direccion", "depto", "fecha", "programar", "fechaProg", "nombre", "tel", "correo", "medio"];
 function guardarSesion() {
   if (!st.cat || st.paso >= NOMBRES.length) return;
+  if (st.paso === 2) leerCampos();
   try { const o = {}; CAMPOS_SESION.forEach((k) => o[k] = st[k]); sessionStorage.setItem("av_sesion", JSON.stringify(o)); } catch (e) {}
 }
 function borrarSesion() { try { sessionStorage.removeItem("av_sesion"); } catch (e) {} }
@@ -421,7 +422,23 @@ function resumenPaso2() {   // resumen del pedido como en un carrito: subtotal, 
      <div class="fila sm"><span class="mut">${desp ? "Entrega a domicilio" : "Entrega"}</span><span>${!desp ? "Gratis" : (e === null ? "por WhatsApp" : e ? peso(e) : "Gratis")}</span></div>
      <hr><div class="fila"><span style="font-weight:600;font-size:16px">Total</span><span style="font-weight:700;font-size:20px">${peso(t + (e || 0))}</span></div>`;
 }
+// Copia lo que está escrito en pantalla a la memoria. Sin esto, si el celular autocompletaba un campo sin avisar
+// y después se redibujaba el paso (por ejemplo al tocar "Programar para un día"), volvía el valor anterior
+// y parecía que la dirección no se podía cambiar.
+function leerCampos() {
+  const v = (id) => { const e = document.getElementById(id); return e ? e.value : null; };
+  if (v("nombre") !== null) st.nombre = v("nombre");
+  if (v("tel") !== null) st.tel = String(v("tel")).replace(/\D/g, "").slice(-8);
+  if (v("correo") !== null) st.correo = v("correo").trim();
+  if (v("comuna") !== null) st.comuna = v("comuna");
+  if (v("otra") !== null) st.otra = v("otra");
+  if (v("dir") !== null && v("dir") !== st.direccion) { st.direccion = v("dir"); st.dirValida = false; }
+  if (v("depto") !== null) st.depto = v("depto");
+  if (v("fprog") !== null) st.fechaProg = v("fprog");
+}
+
 function dibujarPaso2() {
+  if (st.paso === 2) leerCampos();
   const r = st.cat.despacho || {}, act = despachoActivo();
   setTimeout(() => { const v = $("#volver1"); if (v) v.onclick = () => irA(1); }, 0);
   st.entrega = act ? "despacho" : "retiro";   // solo entrega a domicilio (ya no hay retiro en el metro)
@@ -482,9 +499,9 @@ function dibujarPaso2() {
       info(); if (!st.cat.maps_key && (st.direccion || "").trim() && comunaElegida()) revisarDir(); };
     $("#otra").oninput = (e) => { st.otra = e.target.value; st.dirForzada = false; const o = $("#dirok"); if (o) o.innerHTML = ""; };
     $("#otra").onblur = () => { if (!st.cat.maps_key && (st.otra || "").trim().length >= 3 && (st.direccion || "").trim().length >= 5) revisarDir(); };
-    $("#dir").oninput = (e) => { st.direccion = e.target.value; st.dirValida = false; st.dirForzada = false; const o = $("#dirok"); if (o && !st.cat.maps_key) o.innerHTML = ""; };
+    $("#dir").onchange = $("#dir").oninput = (e) => { st.direccion = e.target.value; st.dirValida = false; st.dirForzada = false; const o = $("#dirok"); if (o && !st.cat.maps_key) o.innerHTML = ""; };
     if (!st.cat.maps_key) { $("#dir").onblur = () => { if ((st.direccion || "").trim().length >= 5) revisarDir(); }; if (st.dirCheck) pintarDir(st.dirCheck); }
-    const dp = $("#depto"); if (dp) dp.oninput = (e) => st.depto = e.target.value;
+    const dp = $("#depto"); if (dp) dp.oninput = dp.onchange = (e) => st.depto = e.target.value;
     if (st.cat.maps_key) montarMaps(info);
   }
   info();
@@ -850,6 +867,7 @@ function ofrecerEnvioGratis() {
 
 async function enviar() {
   if (st.enviando || $("#oferta") || $("#pregunta")) return;   // doble toque o ventana abierta
+  if (st.paso === 2) leerCampos();
   const tel = (st.tel || "").replace(/\D/g, "");
   if (tel.length !== 8) { avisar("Escribe los 8 números de tu celular, los que van después del +569."); return; }
   if ((st.nombre || "").trim().length < 2) { avisar("Escribe tu nombre."); return; }
