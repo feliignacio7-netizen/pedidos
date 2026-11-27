@@ -168,93 +168,7 @@ function frase0(ls) {
 function waNum(d) { d = String(d).replace(/\D/g, ""); return d.length === 9 ? "56" + d : d; }
 function lineasActuales() { return st.cat.productos.filter((p) => st.cant[p.id] > 0).map((p) => ({ producto_id: p.id, nombre: p.nombre, cantidad: st.cant[p.id], precio: p.precio })); }
 const OTRA = "__otra";
-// ---------- Dirección validada con Google Maps (solo si el ERP publica una clave de Maps) ----------
 function sinTildes(t) { return String(t || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim(); }
-function cargarMaps(key) {
-  if (window._mapsP) return window._mapsP;
-  window._mapsP = new Promise((ok, mal) => {
-    window._mapsListo = ok;
-    const sc = document.createElement("script");
-    sc.src = "https://maps.googleapis.com/maps/api/js?key=" + encodeURIComponent(key) + "&loading=async&libraries=places&language=es&region=CL&callback=_mapsListo";
-    sc.async = true; sc.onerror = () => { window._mapsP = null; mal(new Error("maps")); };
-    document.head.appendChild(sc);
-  });
-  return window._mapsP;
-}
-function marcarDir() {
-  const el = $("#dirok"); if (!el) return;
-  if (st.dirValida) { el.innerHTML = `<span style="color:var(--ok);font-weight:600">✓ Dirección encontrada en Google Maps</span>`; return; }
-  el.innerHTML = st.dirFuera ? `<span style="color:#9a3b2a">Esa dirección queda en ${esc(st.dirFuera)}. Por ahora despachamos solo a ${esc(listaComunas(st.cat.despacho.comunas))}. Escríbenos por WhatsApp si estás en otra comuna.</span>`
-    : `<span class="mut">Escribe tu calle y número y elige tu dirección de la lista.</span>`;
-}
-async function montarMaps(alCambiar) {
-  const caja = $("#dirbox"); if (!caja) return;
-  try {
-    await cargarMaps(st.cat.maps_key);
-    const { PlaceAutocompleteElement } = await google.maps.importLibrary("places");
-    const ac = new PlaceAutocompleteElement({ includedRegionCodes: ["cl"], locationBias: { center: { lat: -33.42, lng: -70.58 }, radius: 12000 } });
-    ac.id = "dirmaps"; ac.style.width = "100%"; ac.setAttribute("placeholder", "Calle y número");
-    caja.innerHTML = ""; caja.appendChild(ac);
-    if (st.dirValida && st.direccion) caja.insertAdjacentHTML("beforeend", `<div class="sm" style="margin-top:6px">📍 ${esc(st.direccion)}</div>`);
-    const elegir = async (place) => {
-      await place.fetchFields({ fields: ["formattedAddress", "addressComponents", "location"] });
-      const comps = place.addressComponents || [], tipo = (t) => (comps.find((c) => (c.types || []).indexOf(t) >= 0) || {}).longText || "";
-      const comunaG = tipo("administrative_area_level_3") || tipo("locality") || tipo("sublocality");
-      const permitida = (st.cat.despacho.comunas || []).find((x) => sinTildes(x) === sinTildes(comunaG));
-      const calle = [tipo("route"), tipo("street_number")].filter(Boolean).join(" ");
-      if (!tipo("street_number")) { st.dirValida = false; st.dirFuera = ""; marcarDir(); $("#dirok").innerHTML = `<span style="color:#9a3b2a">Falta el número de la calle. Escríbelo y elige de nuevo.</span>`; return; }
-      if (!permitida) { st.dirValida = false; st.dirFuera = comunaG || "otra comuna"; marcarDir(); return; }
-      st.direccion = calle || String(place.formattedAddress || "").split(",")[0]; st.comuna = permitida; st.dirValida = true; st.dirFuera = "";
-      const sel = $("#comuna"); if (sel) sel.value = permitida;
-      marcarDir(); if (alCambiar) alCambiar();
-    };
-    ac.addEventListener("gmp-select", (ev) => { if (ev.placePrediction) elegir(ev.placePrediction.toPlace()); });
-    ac.addEventListener("gmp-placeselect", (ev) => { if (ev.place) elegir(ev.place); });   // versiones anteriores
-    marcarDir();
-  } catch (e) { /* sin Maps: queda el campo de texto normal */ }
-}
-// Revisión de la dirección con OpenStreetMap (gratis, sin llave): ¿existe esa calle en la comuna elegida?
-const NOMINATIM = "https://nominatim.openstreetmap.org/search?format=jsonv2&addressdetails=1&countrycodes=cl&limit=5&accept-language=es&q=";
-function comunasDe(a) { return [a.suburb, a.city_district, a.town, a.municipality, a.city, a.village].filter(Boolean); }
-async function verificarDir() {
-  const dir = (st.direccion || "").trim(), com = comunaElegida(), clave = sinTildes(dir) + "|" + com;
-  if (st.dirCheck && st.dirCheck.clave === clave) return st.dirCheck;
-  let r = { clave, estado: "error" };
-  try {
-    const buscar = async (q) => { const x = await fetch(NOMINATIM + encodeURIComponent(q)); return x.ok ? x.json() : []; };
-    const enComuna = (lista) => lista.find((x) => comunasDe(x.address || {}).some((c) => sinTildes(c) === sinTildes(com)));
-    const lista = await buscar(`${dir}, ${com}, Chile`);
-    let hit = enComuna(lista);
-    if (hit) r = { clave, estado: "ok" };
-    else {
-      const calle = dir.replace(/\s*(#|n°|nº|no\.?)?\s*\d.*$/i, "").trim();
-      const lista2 = calle.length >= 3 ? await buscar(`${calle}, ${com}, Chile`) : [];
-      if (enComuna(lista2)) r = { clave, estado: "ok" };
-      else {
-        const fuera = lista.concat(lista2).map((x) => comunasDe(x.address || {})[0]).find(Boolean);
-        r = fuera ? { clave, estado: "otra", donde: fuera } : { clave, estado: "no" };
-      }
-    }
-  } catch (e) { r = { clave, estado: "error" }; }   // sin conexión con el mapa: no se bloquea el pedido
-  st.dirCheck = r; return r;
-}
-function pintarDir(r) {
-  const el = $("#dirok"); if (!el || !r) return;
-  if (r.estado === "ok") { el.innerHTML = `<span style="color:var(--ok);font-weight:600">✓ Dirección encontrada en ${esc(comunaElegida())}</span>`; return; }
-  if (r.estado === "error" || st.dirForzada) { el.innerHTML = st.dirForzada ? `<span class="mut">Ok, la revisamos contigo por WhatsApp.</span>` : ""; return; }
-  el.innerHTML = `<div style="color:#9a3b2a;margin-top:2px">${r.estado === "otra"
-      ? `Encontramos esa dirección en <b>${esc(r.donde)}</b>, no en ${esc(comunaElegida())}. Revisa la calle o la comuna.`
-      : `No encontramos esa dirección en ${esc(comunaElegida())}. Revisa que la calle y el número estén bien escritos.`}</div>
-    <button class="btn sec" id="dirsi" type="button" style="height:36px;margin-top:6px;padding:0 12px;font-size:13px">Mi dirección está bien escrita</button>`;
-  $("#dirsi").onclick = () => { st.dirForzada = true; pintarDir(r); };
-}
-async function revisarDir() {
-  if (!comunaElegida() || !/\d/.test(st.direccion || "")) return null;
-  const ya = st.dirCheck && st.dirCheck.clave === sinTildes((st.direccion || "").trim()) + "|" + comunaElegida();
-  if (ya) return st.dirCheck;   // ya revisada: no se repinta (así no se pierde el clic en "Mi dirección está bien escrita")
-  const el = $("#dirok"); if (el) el.innerHTML = `<span class="mut">Revisando la dirección…</span>`;
-  const r = await verificarDir(); pintarDir(r); return r;
-}
 
 function despachoActivo() { return !!(st.cat && st.cat.despacho && st.cat.despacho.activo); }
 function comunaZona() { return !!(st.cat && st.cat.despacho && (st.cat.despacho.comunas || []).indexOf(st.comuna) >= 0); }
@@ -432,7 +346,7 @@ function leerCampos() {
   if (v("correo") !== null) st.correo = v("correo").trim();
   if (v("comuna") !== null) st.comuna = v("comuna");
   if (v("otra") !== null) st.otra = v("otra");
-  if (v("dir") !== null && v("dir") !== st.direccion) { st.direccion = v("dir"); st.dirValida = false; }
+  if (v("dir") !== null) st.direccion = v("dir");
   if (v("depto") !== null) st.depto = v("depto");
   if (v("fprog") !== null) st.fechaProg = v("fprog");
 }
@@ -470,11 +384,11 @@ function dibujarPaso2() {
       <label class="c" for="comuna">Comuna</label>
       <select id="comuna"><option value="">Elige tu comuna</option>${(r.comunas || []).map((x) => `<option ${st.comuna === x ? "selected" : ""}>${esc(x)}</option>`).join("")}<option value="${OTRA}" ${esOtra() ? "selected" : ""}>Otra comuna</option></select>
       <div id="otrabox" ${esOtra() ? "" : "hidden"}><label class="c" for="otra">¿Qué comuna?</label><input id="otra" autocomplete="address-level2" placeholder="Ej: Macul" value="${esc(st.otra || "")}">
-        <div class="xs" style="margin-top:4px;color:var(--pri-t)">📲 El envío a otras comunas y su costo <b>lo coordinamos por WhatsApp</b>. Ahora pagas solo los alfajores.</div></div>
-      <label class="c" for="dir">Dirección</label><div id="dirbox"><input id="dir" autocomplete="address-line1" placeholder="Calle y número. Ej: Irarrázaval 1234" value="${esc(st.direccion)}"></div>
-      <div class="xs" id="dirok" style="margin-top:4px"></div>
+        <div class="sm" style="margin-top:8px;padding:10px 12px;border-radius:10px;background:#F6EDE6;color:var(--pri-t)">📲 Para otras comunas, <b>la entrega y el costo del envío los coordinamos contigo por WhatsApp</b>. No necesitas escribir tu dirección ahora. Ahora pagas solo los alfajores.</div></div>
+      <div id="dirzona" ${esOtra() ? "hidden" : ""}>
+      <label class="c" for="dir">Dirección</label><input id="dir" autocomplete="address-line1" placeholder="Calle y número. Ej: Irarrázaval 1234" value="${esc(st.direccion)}">
       <label class="c" for="depto">Depto, casa o indicaciones <span class="mut">(opcional)</span></label><input id="depto" autocomplete="address-line2" placeholder="Ej: depto 502, torre B" value="${esc(st.depto || "")}">
-      <div id="meta" style="margin-top:12px"></div>
+      <div id="meta" style="margin-top:12px"></div></div>
     </div>` : `<div class="mut sm">Coordinamos la entrega contigo por WhatsApp.</div>`}
   </div>
   <div class="card" style="margin-top:12px"><h2 class="tit" style="margin-bottom:6px">Resumen del pedido</h2><div id="resumen"></div></div>`;
@@ -495,14 +409,10 @@ function dibujarPaso2() {
     resumenPaso2(); barra();
   };
   if (act) {
-    $("#comuna").onchange = (e) => { st.comuna = e.target.value; st.dirForzada = false; $("#otrabox").hidden = !esOtra(); if (esOtra()) $("#otra").focus();
-      info(); if (!st.cat.maps_key && (st.direccion || "").trim() && comunaElegida()) revisarDir(); };
-    $("#otra").oninput = (e) => { st.otra = e.target.value; st.dirForzada = false; const o = $("#dirok"); if (o) o.innerHTML = ""; };
-    $("#otra").onblur = () => { if (!st.cat.maps_key && (st.otra || "").trim().length >= 3 && (st.direccion || "").trim().length >= 5) revisarDir(); };
-    $("#dir").onchange = $("#dir").oninput = (e) => { st.direccion = e.target.value; st.dirValida = false; st.dirForzada = false; const o = $("#dirok"); if (o && !st.cat.maps_key) o.innerHTML = ""; };
-    if (!st.cat.maps_key) { $("#dir").onblur = () => { if ((st.direccion || "").trim().length >= 5) revisarDir(); }; if (st.dirCheck) pintarDir(st.dirCheck); }
+    $("#comuna").onchange = (e) => { st.comuna = e.target.value; $("#otrabox").hidden = !esOtra(); $("#dirzona").hidden = esOtra(); if (esOtra()) $("#otra").focus(); info(); };
+    $("#otra").oninput = $("#otra").onchange = (e) => { st.otra = e.target.value; };
+    $("#dir").onchange = $("#dir").oninput = (e) => { st.direccion = e.target.value; };
     const dp = $("#depto"); if (dp) dp.oninput = dp.onchange = (e) => st.depto = e.target.value;
-    if (st.cat.maps_key) montarMaps(info);
   }
   info();
   const tel = $("#tel");
@@ -605,7 +515,7 @@ function cargarDesdePedido(ped) {
   if (!st.tel && ped.telefono) st.tel = String(ped.telefono).replace(/^569/, "").slice(-8);
   st.entrega = ped.entrega === "despacho" ? "despacho" : "retiro";
   if (esOtraTxt(ped.comuna)) { st.comuna = OTRA; st.otra = String(ped.comuna).replace(/\s*\(otra comuna\)/i, ""); } else st.comuna = ped.comuna || st.comuna;
-  if (ped.direccion) st.direccion = String(ped.direccion).replace(/,?\s*\(⚠[^)]*\)/, "");
+  if (ped.direccion) st.direccion = String(ped.direccion).replace(/,?\s*\(⚠[^)]*\)/, "");   // (pedidos antiguos traían una marca del mapa)
   if (st.cajas.length) st.fecha = ped.fecha_entrega || ""; else if (ped.fecha_entrega) { st.programar = true; st.fechaProg = ped.fecha_entrega; }
 }
 // Anula el pedido sin pagar y vuelve a "Envío" con todo cargado, para corregir lo que sea.
@@ -681,7 +591,7 @@ function dibujarPaso3(ped, pago) {
   ${elegido === "mp" ? mp : elegido === "tef" ? tef : ""}
   ${elegido ? `<div class="card" style="margin-top:12px"><div class="fila" style="justify-content:flex-start"><span class="mini">${elegido === "mp" ? 2 : 3}</span><b style="font-size:16px">Coordinamos la entrega</b></div>
     ${ped.fecha_entrega ? `<div class="sm" style="margin-top:6px">📅 <b>${fechaLarga(ped.fecha_entrega)}</b></div>` : ""}
-    ${desp ? `<div class="sm" style="margin-top:4px">🚗 A domicilio: ${esc(dir)}, ${esc(comuna)}</div>` : ""}
+    ${desp ? `<div class="sm" style="margin-top:4px">🚗 A domicilio: ${coordinar ? esc(comuna.replace(/\s*\(otra comuna\)/i, "")) + " · dirección y envío por WhatsApp" : esc(dir) + ", " + esc(comuna)}</div>` : ""}
     <div class="mut sm" style="margin-top:4px">Apenas ${elegido === "mp" ? "se confirme tu pago" : "recibamos tu comprobante"}, <b>te escribimos por WhatsApp</b> para coordinar ${coordinar ? "el envío a tu comuna, su costo y la hora" : "la hora de la entrega"}${ped.fecha_entrega ? "" : " (dentro de 2 días hábiles)"}.</div></div>` : ""}
   ${c.whatsapp ? `<a class="btn out" style="margin-top:12px" target="_blank" rel="noopener" href="https://wa.me/${waNum(c.whatsapp)}?text=${encodeURIComponent("Hola! Tengo una consulta sobre mi pedido de " + frase(ped.lineas) + ".")}">💬 Tengo una consulta</a>` : ""}
   <p class="mut sm" style="text-align:center">${st.compOk ? "Puedes cerrar esta página." : "Si necesitas cerrar esta página, en tu correo tienes el botón para volver a pagar."} ¡Gracias por apoyar a Alfajores Vicencio! 🤎</p>`;
@@ -887,15 +797,7 @@ async function enviar() {
   if (st.entrega === "despacho" && despachoActivo()) {
     if (!st.comuna) { avisar("Elige tu comuna para el despacho."); return; }
     if (esOtra() && (st.otra || "").trim().length < 3) { avisar("Escribe en qué comuna estás."); const o = $("#otra"); if (o) o.focus(); return; }
-    if ((st.direccion || "").trim().length < 5) { avisar("Escribe tu dirección para el despacho."); return; }
-    if (st.cat.maps_key && window.google && window.google.maps && !st.dirValida) { avisar("Elige tu dirección de la lista de Google Maps."); return; }
-    if (!st.cat.maps_key) {
-      if (!/\d/.test(st.direccion)) { avisar("Agrega el número de tu calle."); return; }
-      st.enviando = true; barra();
-      const v = await revisarDir(); st.enviando = false; barra();
-      if (v && (v.estado === "no" || v.estado === "otra") && !st.dirForzada) {
-        avisar("Revisa tu dirección antes de seguir."); const d = $("#dirok"); if (d) d.scrollIntoView({ behavior: "smooth", block: "center" }); return; }
-    }
+    if (!esOtra() && (st.direccion || "").trim().length < 5) { avisar("Escribe tu dirección para el despacho."); const d = $("#dir"); if (d) d.focus(); return; }
     if (!st.ofertaVista && envioActual() > 0 && negroId()) { ofrecerEnvioGratis(); return; }   // le falta poco para el envío gratis: se le ofrece una vez
   }
   st.enviando = true; barra();
@@ -904,7 +806,7 @@ async function enviar() {
       body: JSON.stringify({ accion: "pedido", ref: st.ref, nombre: st.nombre, telefono: tel, correo: (st.correo || "").trim(), nota: st.cajas.length ? "#C " + st.cajas.map((k) => `${k.cajaId}=${negroId()}:${k.neg},${blancoId()}:${k.bla}`).join(";") : "", cantidades: st.cant,
         esperado: (st.totalEsperado = totales()[0] + (envioActual() || 0)),
         fecha_entrega: agendaActiva() ? st.fecha : (st.programar ? st.fechaProg : ""), codigo: st.codigo || "",
-        entrega: despachoActivo() ? st.entrega : "retiro", comuna: comunaElegida(), otra_comuna: esOtra(), direccion: [st.direccion || "", (st.depto || "").trim(), st.dirForzada ? "(⚠ dirección no encontrada en el mapa)" : ""].filter(Boolean).join(", "), trampa: ($("#trampa") || {}).value || "" }) });
+        entrega: despachoActivo() ? st.entrega : "retiro", comuna: comunaElegida(), otra_comuna: esOtra(), direccion: esOtra() ? "" : [st.direccion || "", (st.depto || "").trim()].filter(Boolean).join(", "), trampa: ($("#trampa") || {}).value || "" }) });
     const d = await r.json();
     st.enviando = false;
     if (!d.ok) {
@@ -918,7 +820,7 @@ async function enviar() {
       }
       return;
     }
-    try { localStorage.setItem("av_cliente", JSON.stringify({ nombre: st.nombre, tel: st.tel, correo: st.correo, comuna: st.comuna, otra: st.otra, direccion: st.dirForzada ? "" : st.direccion, depto: st.depto })); } catch (e) {}   // la próxima vez se rellena solo
+    try { localStorage.setItem("av_cliente", JSON.stringify({ nombre: st.nombre, tel: st.tel, correo: st.correo, comuna: st.comuna, otra: st.otra, direccion: st.direccion, depto: st.depto })); } catch (e) {}   // la próxima vez se rellena solo
     history.pushState({ paso: 3 }, "");
     st.paso = 3; st.avisoMp = ""; window.scrollTo(0, 0); barra(); dibujarPaso3(d.pedido, d.pago || {});
   } catch (e) {

@@ -154,7 +154,7 @@ function crearPedido(d) {
     const otraComuna = despacho && d.otra_comuna === true;   // comuna fuera de la zona: el envío se coordina por WhatsApp
     let comuna = despacho ? String(d.comuna || "").replace(/\s+/g, " ").replace(/\(otra comuna\)/gi, "").trim().substring(0, 40) : "";
     const direccion = despacho ? String(d.direccion || "").replace(/\s+/g, " ").trim().substring(0, 120) : "";
-    if (despacho && (!comuna || direccion.length < 5)) return json({ ok: false, error: "Escribe tu comuna y dirección para el despacho." });
+    if (despacho && (!comuna || (!otraComuna && direccion.length < 5))) return json({ ok: false, error: "Escribe tu comuna y dirección para el despacho." });   // otra comuna: la dirección se pide por WhatsApp
     if (otraComuna) { if (comuna.length < 3) return json({ ok: false, error: "Escribe en qué comuna estás." }); comuna += " (otra comuna)"; }
     else if (despacho && (c.despacho.comunas || []).indexOf(comuna) < 0) return json({ ok: false, error: "Por ahora solo entregamos a domicilio en " + (c.despacho.comunas || []).join(", ") + ". Si estás en otra comuna, elige «Otra comuna» y coordinamos el envío por WhatsApp." });
     const envio = (amigo || otraComuna) ? 0 : calcularEnvio(c, total, entrega, comuna);   // con código: gratis; otra comuna: se cobra aparte por WhatsApp
@@ -587,7 +587,8 @@ function cuerpoCorreo(f, I, tipo) {
   const filas = lineas.map(l => `<tr><td style="padding:4px 0">${l.cantidad} × ${escH(l.nombre)}</td><td style="padding:4px 0;text-align:right">${pesos(l.cantidad * l.precio)}</td></tr>`).join("");
   const envio = Number(f[I.envio] || 0), desp = String(f[I.entrega]) === "despacho";
   const dia = fechaBonita(f[I.fecha_entrega]);
-  const entrega = desp ? `🚗 Despacho a ${escH(f[I.direccion])}, ${escH(f[I.comuna])}` : "📦 Entrega por coordinar";
+  const otraC = /\(otra comuna\)/i.test(String(f[I.comuna]));
+  const entrega = !desp ? "📦 Entrega por coordinar" : otraC ? `🚗 Despacho a ${escH(String(f[I.comuna]).replace(/\s*\(otra comuna\)/i, ""))} · dirección y envío por WhatsApp` : `🚗 Despacho a ${escH(f[I.direccion])}, ${escH(f[I.comuna])}`;
   if (tipo === "recordatorio" && (String(f[I.mp_pago] || "") || String(f[I.anulado] || "") || tieneComprobante(ref))) return "";
   const pagar = (tipo === "recibido" || tipo === "recordatorio") && !String(f[I.mp_pago] || "") ? `<p style="text-align:center;margin:24px 0"><a href="${PAGINA}/?pagar=${encodeURIComponent(ref)}" style="background:#BC7B69;color:#2A1A12;text-decoration:none;padding:12px 22px;border-radius:999px;font-weight:600">Pagar mi pedido</a></p>` : "";
   const boton = pagar || (tipo === "entregado" ? `<p style="text-align:center;margin:24px 0"><a href="${PAGINA}/opinion.html?p=${encodeURIComponent(ref)}" style="background:#BC7B69;color:#2A1A12;text-decoration:none;padding:12px 22px;border-radius:999px;font-weight:600">Dejar mi opinión</a></p>` : "");
