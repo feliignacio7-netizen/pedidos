@@ -42,6 +42,7 @@ input:focus,textarea:focus{border-color:var(--pri);box-shadow:0 0 0 1px var(--pr
 .pref svg{width:30px;height:20px;border-radius:3px;box-shadow:0 0 0 1px rgba(0,0,0,.15)}
 .trampa{position:absolute;left:-9999px;opacity:0;height:0;width:0}
 .barra{position:fixed;z-index:5;left:0;right:0;bottom:0;background:var(--sup);border-top:1px solid var(--bor);padding:10px 14px calc(10px + env(safe-area-inset-bottom,0px))}
+.barra .btn{white-space:nowrap;width:auto;padding:0 16px}.barra #sig{flex:0 1 auto}
 .barra .in{max-width:460px;margin:0 auto;display:flex;align-items:center;justify-content:space-between;gap:10px}
 .barra .tot{font-size:20px;font-weight:700;line-height:1.1}
 .btn{height:52px;border-radius:14px;border:0;font:inherit;font-size:16px;font-weight:600;background:var(--pri);color:var(--fg);padding:0 22px;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:8px;text-decoration:none;touch-action:manipulation}
@@ -110,7 +111,36 @@ const peso = (n) => "$" + Math.round(n).toLocaleString("es-CL");
 const esc = (t) => String(t ?? "").replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const BANDERA = '<svg viewBox="0 0 90 60"><rect width="90" height="60" fill="#fff"/><rect y="30" width="90" height="30" fill="#D52B1E"/><rect width="30" height="30" fill="#0039A6"/><polygon points="15,5 17.5,11.6 24.5,11.9 19,16.3 20.9,23.1 15,19.2 9.1,23.1 11,16.3 5.5,11.9 12.5,11.6" fill="#fff"/></svg>';
 const NOMBRES = ["Carrito", "Envío", "Pago", "Listo"];
-const st = { paso: 1, cat: null, cant: {}, cajas: [], arma: null, medio: "", fecha: "", codigo: "", vista: "", programar: false, fechaProg: "", entrega: "retiro", comuna: "", otra: "", direccion: "", ref: (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random().toString(36).slice(2)), enviando: false };
+const st = { paso: 1, cat: null, cant: {}, cajas: [], arma: null, medio: "", fecha: "", codigo: "", vista: "", programar: false, fechaProg: "", entrega: "despacho", comuna: "", otra: "", direccion: "", ref: (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random().toString(36).slice(2)), enviando: false };
+
+const nuevoRef = () => crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random().toString(36).slice(2);
+async function api(datos) {
+  const r = await fetch(window.API_URL, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify(datos) });
+  return r.json();
+}
+// Ventana de pregunta propia (el navegador no muestra confirm() en todos lados). botones: [[texto, clase, accion]]
+function preguntar(titulo, texto, botones, alCerrar) {
+  if ($("#pregunta")) $("#pregunta").remove();
+  const f = document.createElement("div"); f.id = "pregunta";
+  f.style.cssText = "position:fixed;inset:0;z-index:60;background:rgba(42,26,18,.45);display:flex;align-items:flex-end;justify-content:center";
+  f.innerHTML = `<div role="dialog" aria-modal="true" style="background:var(--sup);width:100%;max-width:520px;max-height:90vh;overflow:auto;box-sizing:border-box;border-radius:20px 20px 0 0;padding:22px max(16px, env(safe-area-inset-left, 0px)) calc(18px + env(safe-area-inset-bottom, 0px));box-shadow:0 -8px 30px rgba(0,0,0,.15)">
+    <h2 class="tit">${titulo}</h2><div class="mut sm">${texto}</div>
+    ${botones.map((b, i) => `<button class="btn ${b[1]}" data-i="${i}" style="margin-top:10px;width:100%">${b[0]}</button>`).join("")}</div>`;
+  document.body.appendChild(f);
+  const cerrar = () => { f.remove(); document.removeEventListener("keydown", esc); };
+  const esc = (e) => { if (e.key === "Escape") { cerrar(); if (alCerrar) alCerrar(); } };
+  document.addEventListener("keydown", esc);
+  f.onclick = (e) => { if (e.target === f) { cerrar(); if (alCerrar) alCerrar(); } };
+  f.querySelectorAll("button[data-i]").forEach((b) => b.onclick = () => { cerrar(); botones[Number(b.dataset.i)][2](); });
+}
+// El carrito y los datos se guardan en la pestaña: si el cliente recarga o vuelve atrás, no pierde nada.
+const CAMPOS_SESION = ["paso", "ref", "cant", "cajas", "codigo", "vista", "entrega", "comuna", "direccion", "depto", "fecha", "programar", "fechaProg", "nombre", "tel", "correo", "medio"];
+function guardarSesion() {
+  if (!st.cat || st.paso >= NOMBRES.length) return;
+  try { const o = {}; CAMPOS_SESION.forEach((k) => o[k] = st[k]); sessionStorage.setItem("av_sesion", JSON.stringify(o)); } catch (e) {}
+}
+function borrarSesion() { try { sessionStorage.removeItem("av_sesion"); } catch (e) {} }
+function leerSesion() { try { return JSON.parse(sessionStorage.getItem("av_sesion") || "null"); } catch (e) { return null; } }
 
 function avisar(t) { const a = $("#aviso"); a.textContent = t; a.style.display = "block"; clearTimeout(avisar.t); avisar.t = setTimeout(() => a.style.display = "none", 3200); }
 function sabor(n) { return String(n).trim().toLowerCase().replace(/^alfajor(es)?\s+(de\s+)?/, ""); }
@@ -146,7 +176,7 @@ function cargarMaps(key) {
 function marcarDir() {
   const el = $("#dirok"); if (!el) return;
   if (st.dirValida) { el.innerHTML = `<span style="color:var(--ok);font-weight:600">✓ Dirección encontrada en Google Maps</span>`; return; }
-  el.innerHTML = st.dirFuera ? `<span style="color:#9a3b2a">Esa dirección queda en ${esc(st.dirFuera)}. Por ahora despachamos solo a ${esc(listaComunas(st.cat.despacho.comunas))}. Puedes retirar gratis en el metro Escuela Militar.</span>`
+  el.innerHTML = st.dirFuera ? `<span style="color:#9a3b2a">Esa dirección queda en ${esc(st.dirFuera)}. Por ahora despachamos solo a ${esc(listaComunas(st.cat.despacho.comunas))}. Escríbenos por WhatsApp si estás en otra comuna.</span>`
     : `<span class="mut">Escribe tu calle y número y elige tu dirección de la lista.</span>`;
 }
 async function montarMaps(alCambiar) {
@@ -258,10 +288,10 @@ function dibujarCajas() {
   }
   const lista = st.cajas.map((k, i) => `<div class="cajita"><div class="sm">🎁 Caja de ${k.tam} · ${peso((cj.find((p) => p.id === k.cajaId) || {}).precio || 0)}: ${k.neg ? k.neg + " negro" + (k.neg > 1 ? "s" : "") : ""}${k.neg && k.bla ? " y " : ""}${k.bla ? k.bla + " blanco" + (k.bla > 1 ? "s" : "") : ""}</div><button class="q" data-q="${i}">Quitar</button></div>`).join("");
   el.innerHTML = `<h2 class="tit">🎄 Caja de Navidad personalizable</h2><div class="mut sm">Elige el tamaño y tus sabores. Va con cinta y etiqueta navideña para escribir a quién va dirigida.</div>${tams}${cuerpo}`;
-  el.querySelectorAll(".tam button").forEach((b) => b.onclick = () => { const t = Number(b.dataset.t); st.arma = st.arma && st.arma.tam === t ? null : { tam: t, neg: 0, bla: 0 }; dibujarCajas(); });
+  el.querySelectorAll(".tam button").forEach((b) => b.onclick = () => { const t = Number(b.dataset.t); st.arma = st.arma && st.arma.tam === t ? null : { tam: t, neg: 0, bla: 0 }; dibujarCajas(); barra(); });
   el.querySelectorAll("[data-a]").forEach((b) => b.onclick = () => { const t = st.arma.tam, a = b.dataset.a;
-    st.arma.neg = a === "neg" ? t : a === "bla" ? 0 : Math.ceil(t / 2); st.arma.bla = t - st.arma.neg; dibujarCajas(); });
-  el.querySelectorAll("[data-s]").forEach((b) => b.onclick = () => { const k = b.dataset.s, n = st.arma.neg + st.arma.bla + Number(b.dataset.d); if (Number(b.dataset.d) > 0 && n > st.arma.tam) return; st.arma[k] = Math.max(0, st.arma[k] + Number(b.dataset.d)); dibujarCajas(); });
+    st.arma.neg = a === "neg" ? t : a === "bla" ? 0 : Math.ceil(t / 2); st.arma.bla = t - st.arma.neg; dibujarCajas(); barra(); });
+  el.querySelectorAll("[data-s]").forEach((b) => b.onclick = () => { const k = b.dataset.s, n = st.arma.neg + st.arma.bla + Number(b.dataset.d); if (Number(b.dataset.d) > 0 && n > st.arma.tam) return; st.arma[k] = Math.max(0, st.arma[k] + Number(b.dataset.d)); dibujarCajas(); barra(); });
   const ad = $("#addcaja"); if (ad) ad.onclick = () => {
     const c = cj.find((p) => p.navidad === st.arma.tam);
     st.cajas.push({ tam: st.arma.tam, neg: st.arma.neg, bla: st.arma.bla, cajaId: c.id });
@@ -309,32 +339,38 @@ function dibujarPaso1() {
   </div>` : ""}
   <div class="card" id="carrito" style="margin-top:12px" hidden></div>
   ${vista === "cajas" ? `<div class="card nav" id="navidad" style="margin-top:12px"></div>` : `
-  <div class="card" style="margin-top:12px"><h2 class="tit">Alfajores a granel</h2><div class="mut xs">Toca + para sumar. Para retiro gratis en el metro, mínimo ${c.minimo_granel || 4} alfajores.</div>
+  <div class="card" style="margin-top:12px"><h2 class="tit">Alfajores a granel</h2><div class="mut xs">Toca + para sumar.</div>
     ${alfajores().map((p) => `<div class="fila prod"><div><div style="font-weight:500;font-size:16px">${/negro/i.test(p.nombre) ? "⚫" : "⚪"} ${esc(p.nombre)}</div><div class="mut sm">${precioTxt(p)} c/u</div></div>
       <div class="cant"><button data-id="${p.id}" data-d="-1" aria-label="Quitar">−</button><span class="num" id="n${p.id}">${st.cant[p.id] || 0}</span><button class="mas" data-id="${p.id}" data-d="1" aria-label="Sumar">+</button></div></div>`).join("")}
   </div>`}
   <div class="card sm" id="falta1" style="margin-top:12px;border-color:var(--pri);background:#F6EDE6" hidden></div>
-  ${c.amigo ? (st.codigo ? `<div class="mut sm" style="margin-top:12px;text-align:center">✓ Código aplicado</div>`
+  ${c.amigo ? (st.codigo ? `<div class="mut sm" style="margin-top:12px;text-align:center">✓ Código aplicado · <a href="#" id="quitarcod" style="color:var(--pri-t)">Quitar código</a></div>`
     : `<details class="sm" style="margin-top:12px"><summary class="mut" style="cursor:pointer;padding:8px 0">¿Tienes un código?</summary>
       <div class="fila" style="gap:8px"><input id="codigo" autocomplete="off" placeholder="Escribe tu código" style="flex:1"><button class="btn out" id="aplicar" style="width:auto;margin:0;padding:0 16px">Aplicar</button></div></details>`) : ""}
   ${c.whatsapp ? `<a class="btn out" style="margin-top:12px" target="_blank" rel="noopener" href="https://wa.me/${waNum(c.whatsapp)}?text=${encodeURIComponent("Hola! Tengo una consulta sobre los alfajores.")}">💬 ¿Tienes alguna duda? Escríbenos</a>` : ""}`;
   document.querySelectorAll(".cant button[data-id]").forEach((b) => b.onclick = () => { const id = Number(b.dataset.id) || b.dataset.id; st.cant[id] = Math.max(piso(id), Math.min(100, (st.cant[id] || 0) + Number(b.dataset.d))); $("#n" + id).textContent = st.cant[id]; barra(); });
   if (vista === "cajas") dibujarCajas();
   document.querySelectorAll(".seg button").forEach((b) => b.onclick = () => { st.vista = b.dataset.v; dibujarPaso1(); barra(); });
-  const ap = $("#aplicar"); if (ap) ap.onclick = aplicarCodigo;
+  const ap = $("#aplicar"); if (ap) ap.onclick = () => aplicarCodigo();
+  const ci = $("#codigo"); if (ci) ci.onkeydown = (e) => { if (e.key === "Enter") { e.preventDefault(); aplicarCodigo(); } };
+  const qc = $("#quitarcod"); if (qc) qc.onclick = async (e) => { e.preventDefault(); await recargarPrecios(); st.codigo = ""; dibujarPaso1(); barra(); avisar("Quitamos el código"); };
+}
+async function recargarPrecios() {   // vuelve a los precios normales del catálogo
+  try { const c = await (await fetch(window.API_URL)).json(); if (c.ok) { const pr = {}; c.productos.forEach((p) => pr[p.id] = p);
+    st.cat.productos.forEach((p) => { const n = pr[p.id]; if (n) { p.precio = n.precio; if (n.antes) p.antes = n.antes; else delete p.antes; } }); } } catch (e) {}
 }
 
-async function aplicarCodigo() {
-  const codigo = ($("#codigo").value || "").trim();
-  if (!codigo) { avisar("Escribe tu código."); return; }
+async function aplicarCodigo(dado, silencioso) {
+  const codigo = (dado || ($("#codigo") || {}).value || "").trim();
+  if (!codigo) { if (!silencioso) avisar("Escribe tu código."); return; }
   try {
     const r = await fetch(window.API_URL, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify({ accion: "amigo", codigo: codigo }) });
     const d = await r.json();
-    if (!d.ok) { avisar(d.error || "Ese código no es válido."); return; }
+    if (!d.ok) { if (!silencioso) avisar(d.error || "Ese código no es válido."); else st.codigo = ""; return; }
     const pr = {}; (d.productos || []).forEach((p) => pr[p.id] = p);
     st.cat.productos.forEach((p) => { const n = pr[p.id]; if (n) { p.precio = n.precio; if (n.antes) p.antes = n.antes; else delete p.antes; } });
-    st.codigo = codigo; dibujarPaso1(); barra(); avisar("✓ Código aplicado");
-  } catch (e) { avisar("Sin conexión. Intenta de nuevo."); }
+    st.codigo = codigo; if (st.paso === 1) dibujarPaso1(); barra(); if (!silencioso) avisar("✓ Código aplicado");
+  } catch (e) { if (!silencioso) avisar("Sin conexión. Intenta de nuevo."); }
 }
 
 // Días de entrega que alcanzan para este pedido (el tope por día no se muestra: si no alcanza, el día no aparece).
@@ -375,6 +411,7 @@ function resumenPaso2() {   // resumen del pedido como en un carrito: subtotal, 
 }
 function dibujarPaso2() {
   const r = st.cat.despacho || {}, act = despachoActivo();
+  st.entrega = act ? "despacho" : "retiro";   // solo entrega a domicilio (ya no hay retiro en el metro)
   $("#cuerpo").innerHTML = indicador() + `
   <div class="card"><h2 class="tit">Contacto</h2>
     <label class="c" for="nombre">Tu nombre</label><input id="nombre" autocomplete="name" value="${esc(st.nombre || "")}">
@@ -395,21 +432,16 @@ function dibujarPaso2() {
     <label class="opc ${st.programar ? "sel" : ""}" id="pr_si"><input type="radio" name="prog" value="si" ${st.programar ? "checked" : ""}><div style="flex:1"><b style="font-weight:600">Programar para un día</b><div class="mut sm">Lunes a viernes, desde el ${fechaLarga(sumarHabiles(hoyLocal(), 2))}.</div>
       ${st.programar ? `<input type="date" id="fprog" min="${sumarHabiles(hoyLocal(), 2)}" max="${sumarDiasLocal(hoyLocal(), 60)}" value="${esc(st.fechaProg)}" style="margin-top:8px;width:100%;min-height:48px">` : ""}</div></label>
   </div>` : ""}
-  <div class="card" style="margin-top:12px"><h2 class="tit">Método de envío</h2>
-    <label class="opc ${st.entrega === "retiro" || !act ? "sel" : ""}" id="o_retiro"><input type="radio" name="ent" value="retiro" ${st.entrega === "retiro" || !act ? "checked" : ""}>
-      <div style="flex:1"><div class="fila"><b style="font-weight:600">🚇 Metro Escuela Militar</b><span class="gratis">Gratis</span></div>
-        <div class="mut sm">Entrega gratis en el metro, con previa coordinación</div></div></label>
-    ${act ? `<label class="opc ${st.entrega === "despacho" ? "sel" : ""}" id="o_despacho"><input type="radio" name="ent" value="despacho" ${st.entrega === "despacho" ? "checked" : ""}>
-      <div style="flex:1"><div class="fila"><b style="font-weight:600">🚗 Entrega a domicilio</b><span></span></div>
-        <div class="mut sm">${esc(listaComunas(r.comunas))}: ${Number(r.minimo || 0) ? `<b>gratis desde ${peso(r.minimo)}</b>, bajo eso ${peso(r.costo || 0)}` : peso(r.costo || 0)}<br>Otras comunas: retiro gratis en el metro Escuela Militar</div></div></label>
-    <div id="desp" ${st.entrega === "despacho" ? "" : "hidden"}>
+  <div class="card" style="margin-top:12px"><h2 class="tit">${act ? "🚗 Entrega a domicilio" : "Entrega"}</h2>
+    ${act ? `<div class="mut sm">Entregamos en ${esc(listaComunas(r.comunas))}. ${Number(r.minimo || 0) ? `<b>Envío gratis desde ${peso(r.minimo)}</b>, bajo eso ${peso(r.costo || 0)}.` : `Envío ${peso(r.costo || 0)}.`}<br>¿Estás en otra comuna? Escríbenos por WhatsApp y lo vemos.</div>
+    <div id="desp">
       <label class="c" for="comuna">Comuna</label>
       <select id="comuna"><option value="">Elige tu comuna</option>${(r.comunas || []).map((x) => `<option ${st.comuna === x ? "selected" : ""}>${esc(x)}</option>`).join("")}</select>
       <label class="c" for="dir">Dirección</label><div id="dirbox"><input id="dir" autocomplete="address-line1" placeholder="Calle y número. Ej: Irarrázaval 1234" value="${esc(st.direccion)}"></div>
       <div class="xs" id="dirok" style="margin-top:4px"></div>
       <label class="c" for="depto">Depto, casa o indicaciones <span class="mut">(opcional)</span></label><input id="depto" autocomplete="address-line2" placeholder="Ej: depto 502, torre B" value="${esc(st.depto || "")}">
       <div id="meta" style="margin-top:12px"></div>
-    </div>` : ""}
+    </div>` : `<div class="mut sm">Coordinamos la entrega contigo por WhatsApp.</div>`}
   </div>
   <div class="card" style="margin-top:12px"><h2 class="tit" style="margin-bottom:6px">Resumen del pedido</h2><div id="resumen"></div></div>`;
   const info = () => {
@@ -427,9 +459,6 @@ function dibujarPaso2() {
     resumenPaso2(); barra();
   };
   if (act) {
-    document.querySelectorAll('input[name="ent"]').forEach((x) => x.onchange = () => {
-      st.entrega = x.value; $("#desp").hidden = st.entrega !== "despacho";
-      $("#o_retiro").classList.toggle("sel", st.entrega === "retiro"); $("#o_despacho").classList.toggle("sel", st.entrega === "despacho"); info(); });
     $("#comuna").onchange = (e) => { st.comuna = e.target.value; st.dirForzada = false; info(); if (!st.cat.maps_key && (st.direccion || "").trim()) revisarDir(); };
     $("#dir").oninput = (e) => { st.direccion = e.target.value; st.dirValida = false; st.dirForzada = false; const o = $("#dirok"); if (o && !st.cat.maps_key) o.innerHTML = ""; };
     if (!st.cat.maps_key) { $("#dir").onblur = () => { if ((st.direccion || "").trim().length >= 5) revisarDir(); }; if (st.dirCheck) pintarDir(st.dirCheck); }
@@ -493,7 +522,8 @@ function leerPendiente() { try { const x = JSON.parse(localStorage.getItem("av_p
 
 // Pantalla final: el cliente ya pagó (tarjeta) o ya mandó su comprobante. No queda nada por hacer.
 function pantallaFinal(ped, como) {
-  guardarPendiente("");
+  guardarPendiente(""); borrarSesion(); st.cant = {}; st.cajas = []; st.arma = null;
+  if (history.state && history.state.paso) history.replaceState({ paso: NOMBRES.length }, "");
   st.paso = NOMBRES.length; $("#barra").hidden = true; $("#sub").hidden = true; window.scrollTo(0, 0);
   const c = st.cat || {};
   const titulo = como === "pagado" ? "¡Listo! Tu pago está confirmado" : como === "wa" ? "¡Listo! Revisamos tu comprobante por WhatsApp" : "¡Listo! Recibimos tu comprobante";
@@ -502,7 +532,7 @@ function pantallaFinal(ped, como) {
   const resumen = ped ? `<div class="card" style="margin-top:12px"><div style="font-weight:600;font-size:16px;margin-bottom:6px">Tu pedido${ped.codigo ? " #" + esc(ped.codigo) : ""}</div>
     ${(ped.lineas || []).map((l) => `<div class="fila sm"><span>${/^caja de navidad/i.test(l.nombre) ? "🎁 " + esc(l.nombre) : l.cantidad + " × " + esc(nombreCorto(l.nombre))}</span><span>${peso(l.cantidad * l.precio)}</span></div>`).join("")}
     ${ped.fecha_entrega ? `<div class="fila sm"><span>📅 Entrega</span><span><b>${fechaLarga(ped.fecha_entrega)}</b></span></div>` : ""}
-    <div class="fila sm"><span>${desp ? "🚗 A domicilio" : "🚇 Metro Escuela Militar"}</span><span>${desp ? esc(ped.comuna || "") : "Gratis"}</span></div>
+    ${desp ? `<div class="fila sm"><span>🚗 A domicilio</span><span>${esc(ped.comuna || "")}</span></div>` : ""}
     <hr><div class="fila"><span style="font-weight:600">Total</span><span style="font-weight:700">${peso(ped.total)}</span></div></div>` : "";
   const paso = (n, t) => `<div class="fila sm" style="justify-content:flex-start;gap:10px;margin-top:8px"><span class="mini">${n}</span><span>${t}</span></div>`;
   const siguientes = (como === "pagado" ? [] : ["Revisamos tu transferencia y te confirmamos."])
@@ -521,8 +551,37 @@ function pantallaFinal(ped, como) {
   <p class="mut sm" style="text-align:center">Puedes cerrar esta página. ¡Gracias por apoyar a Alfajores Vicencio! 🤎</p>`;
 }
 
+// Rearma el carrito y los datos desde un pedido guardado (para "Cambiar mi pedido" desde el correo, otro teléfono o una reserva vencida).
+function cargarDesdePedido(ped) {
+  st.cant = {}; st.cajas = []; st.arma = null;
+  const cat = {}; st.cat.productos.forEach((p) => cat[p.id] = p);
+  (ped.lineas || []).forEach((l) => { if (cat[l.producto_id]) st.cant[l.producto_id] = (st.cant[l.producto_id] || 0) + l.cantidad; });
+  const m = /#C ([^·]+)/.exec(ped.nota || "");
+  if (m) m[1].split(";").forEach((t) => { const x = /(\d+)=(\d+):(\d+),(\d+):(\d+)/.exec(t); if (!x || !cat[x[1]]) return;
+    const sab = {}; sab[x[2]] = Number(x[3]); sab[x[4]] = Number(x[5]);
+    st.cajas.push({ tam: cat[x[1]].navidad, neg: sab[negroId()] || 0, bla: sab[blancoId()] || 0, cajaId: Number(x[1]) }); });
+  cajasCat().forEach((c) => { const n = st.cant[c.id] || 0, hay = st.cajas.filter((k) => k.cajaId === c.id).length;   // cajas sin detalle de sabores
+    for (let i = hay; i < n; i++) st.cajas.push({ tam: c.navidad, neg: Math.ceil(c.navidad / 2), bla: Math.floor(c.navidad / 2), cajaId: c.id }); });
+  st.nombre = st.nombre || ped.nombre || ""; st.correo = st.correo || ped.correo || "";
+  if (!st.tel && ped.telefono) st.tel = String(ped.telefono).replace(/^569/, "").slice(-8);
+  st.entrega = ped.entrega === "despacho" ? "despacho" : "retiro"; st.comuna = ped.comuna || st.comuna;
+  if (ped.direccion) st.direccion = String(ped.direccion).replace(/,?\s*\(⚠[^)]*\)/, "");
+  if (st.cajas.length) st.fecha = ped.fecha_entrega || ""; else if (ped.fecha_entrega) { st.programar = true; st.fechaProg = ped.fecha_entrega; }
+}
+// Anula el pedido sin pagar y vuelve a "Envío" con todo cargado, para corregir lo que sea.
+function cambiarPedido() {
+  const viejo = st.ref;
+  if (totales()[1] <= 0 && st.ped) cargarDesdePedido(st.ped);
+  st.ref = nuevoRef();
+  api({ accion: "anular", ref: viejo }).catch(() => {});
+  guardarPendiente(""); st.medio = ""; st.comp = null; st.totalEsperado = 0; st.desdeCorreo = false; st.avisoMp = ""; st.ofertaVista = false;
+  history.replaceState({ paso: 2 }, ""); st.paso = 2; window.scrollTo(0, 0); dibujarPaso2(); barra();
+  avisar("Anulamos el pedido anterior. Corrige lo que quieras y vuelve a pagar.");
+}
+
 function dibujarPaso3(ped, pago) {
-  st.ped = ped; st.pendiente = null; guardarPendiente(st.ref);
+  st.ped = ped; st.pago = pago; st.pendiente = null; guardarPendiente(st.ref);
+  if (!history.state || history.state.paso !== 3) history.replaceState({ paso: 3 }, "");
   const c = st.cat;
   const rut = (r) => { const l = String(r || "").replace(/[^0-9kK]/g, ""); return l.length < 8 ? String(r || "").trim() : Number(l.slice(0, -1)).toLocaleString("es-CL") + "-" + l.slice(-1).toUpperCase(); };
   const filas = [["Nombre", pago.titular], ["RUT", rut(pago.rut)], ["Banco", pago.banco], ["Tipo de cuenta", pago.tipo], ["N° de cuenta", pago.numero], ["Correo", pago.correo]].filter((f) => f[1]);
@@ -536,7 +595,7 @@ function dibujarPaso3(ped, pago) {
   const nom = (st.nombre || "").trim().split(/\s+/).map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(" ");
   const texto = [`Hola 👋, soy ${nom}`,
     e("🛒") + frase(ped.lineas),
-    desp ? e("🚗") + `${comuna}${dir ? " · " + dir : ""} · horario por coordinar` : e("🚇") + "Metro Escuela Militar · horario por coordinar",
+    desp ? e("🚗") + `${comuna}${dir ? " · " + dir : ""} · horario por coordinar` : e("📦") + "Entrega por coordinar",
     e("💰") + "Total " + peso(ped.total) + (desp && envio ? " (con envío)" : ""),
     e("🧾") + "Te envío mi comprobante 🙏"].join("\n");
   const tef = `
@@ -553,7 +612,13 @@ function dibujarPaso3(ped, pago) {
   $("#cuerpo").innerHTML = indicador() + `
   ${st.totalEsperado && Math.round(st.totalEsperado) !== Math.round(ped.total) ? `<div class="card sm" style="border-color:var(--pri);background:#F6EDE6">Los precios se actualizaron mientras armabas tu pedido. El total final es <b>${peso(ped.total)}</b>.</div>` : ""}
   <div class="card" style="${st.totalEsperado && Math.round(st.totalEsperado) !== Math.round(ped.total) ? "margin-top:12px" : ""}"><h2 class="tit">Pago${ped.codigo ? ` <span class="mut" style="font-size:15px;font-weight:400">· pedido #${esc(ped.codigo)}</span>` : ""}</h2><div class="mut sm">¡Gracias! Tu pedido${ped.codigo ? ` <b>#${esc(ped.codigo)}</b>` : ""} quedó anotado${ped.codigo ? " y te enviamos un correo con el resumen" : ""}. ${c.mp ? "Elige cómo quieres pagar:" : "Solo faltan 3 cosas:"}</div>
-    ${st.compOk || st.desdeCorreo ? "" : `<button class="btn sec" id="cambiar" style="height:40px;margin-top:10px;padding:0 14px;font-size:14px">← Cambiar mi pedido</button>`}</div>
+    <button class="btn sec" id="cambiar" style="height:40px;margin-top:10px;padding:0 14px;font-size:14px">← Cambiar mi pedido</button></div>
+  ${st.avisoMp ? `<div class="card sm" style="margin-top:12px;border-color:${st.avisoMp === "pending" || st.avisoMp === "in_process" ? "var(--bor2)" : "var(--pri)"};background:#F6EDE6">${
+    st.avisoMp === "pending" || st.avisoMp === "in_process"
+      ? `<b>⏳ Mercado Pago está procesando tu pago.</b><div style="margin-top:4px">Apenas se apruebe te llega un correo. <b>No vuelvas a pagar</b> para no cobrarte dos veces.</div><button class="btn out" id="revisarmp" style="margin-top:8px">Volver a revisar mi pago</button>`
+      : st.avisoMp === "rejected"
+      ? `<b>Mercado Pago rechazó el pago.</b><div style="margin-top:4px">No se hizo ningún cobro. Prueba con otra tarjeta o paga por transferencia.</div>`
+      : `<b>El pago con Mercado Pago no se completó.</b><div style="margin-top:4px">No se hizo ningún cobro. Puedes intentarlo de nuevo o pagar por transferencia. Si alcanzaste a pagar, toca «Ya pagué».</div><button class="btn out" id="revisarmp" style="margin-top:8px">Ya pagué, revisar de nuevo</button>`}</div>` : ""}
   <div class="card" style="margin-top:12px"><div style="font-weight:600;font-size:16px;margin-bottom:6px">Resumen de tu pedido</div>
     ${ped.lineas.map((l) => /^caja de navidad/i.test(l.nombre) && st.cajas.length
       ? st.cajas.filter((k) => k.cajaId === l.producto_id).map((k) => `<div class="fila sm"><span>🎁 Caja de ${k.tam} (${sabTxt(k)})</span><span>${peso(l.precio)}</span></div>`).join("")
@@ -572,7 +637,7 @@ function dibujarPaso3(ped, pago) {
   ${elegido === "mp" ? mp : elegido === "tef" ? tef : ""}
   ${elegido ? `<div class="card" style="margin-top:12px"><div class="fila" style="justify-content:flex-start"><span class="mini">${elegido === "mp" ? 2 : 3}</span><b style="font-size:16px">Coordinamos la entrega</b></div>
     ${ped.fecha_entrega ? `<div class="sm" style="margin-top:6px">📅 <b>${fechaLarga(ped.fecha_entrega)}</b></div>` : ""}
-    ${desp ? `<div class="sm" style="margin-top:4px">🚗 A domicilio: ${esc(dir)}, ${esc(comuna)}</div>` : `<div class="sm" style="margin-top:4px">🚇 Metro Escuela Militar</div>`}
+    ${desp ? `<div class="sm" style="margin-top:4px">🚗 A domicilio: ${esc(dir)}, ${esc(comuna)}</div>` : ""}
     <div class="mut sm" style="margin-top:4px">Apenas ${elegido === "mp" ? "se confirme tu pago" : "recibamos tu comprobante"}, <b>te escribimos por WhatsApp</b> para coordinar la hora de la entrega${ped.fecha_entrega ? "" : " (dentro de 2 días hábiles)"}.</div></div>` : ""}
   ${c.whatsapp ? `<a class="btn out" style="margin-top:12px" target="_blank" rel="noopener" href="https://wa.me/${waNum(c.whatsapp)}?text=${encodeURIComponent("Hola! Tengo una consulta sobre mi pedido de " + frase(ped.lineas) + ".")}">💬 Tengo una consulta</a>` : ""}
   <p class="mut sm" style="text-align:center">${st.compOk ? "Puedes cerrar esta página." : "Si necesitas cerrar esta página, en tu correo tienes el botón para volver a pagar."} ¡Gracias por apoyar a Alfajores Vicencio! 🤎</p>`;
@@ -618,21 +683,15 @@ function dibujarPaso3(ped, pago) {
     pintarComp();
   }
   pintarComp();
-  document.addEventListener("click", function yaWa(ev) {   // mandó el comprobante por WhatsApp: se ofrece cerrar el pedido
-    if (!ev.target.closest || !ev.target.closest("#wacomp")) return;
-    document.removeEventListener("click", yaWa);
+  const wc = $("#wacomp"); if (wc) wc.addEventListener("click", () => {   // mandó el comprobante por WhatsApp: se ofrece cerrar el pedido
     setTimeout(() => { const el = $("#cardcomp"); if (!el || $("#yawa")) return;
       el.insertAdjacentHTML("beforeend", `<button class="btn g" id="yawa" style="margin-top:10px">Ya lo envié por WhatsApp ✓</button>`);
       $("#yawa").onclick = () => pantallaFinal(ped, "wa"); }, 800);
   });
-  const bm = $("#pagomp"); if (bm) bm.onclick = () => irAPagarMp(st.ref, bm);
-  const cb = $("#cambiar"); if (cb) cb.onclick = () => {   // vuelve a editar: el pedido anterior se anula y se arma uno nuevo
-    if (st.compOk) return;
-    const viejo = st.ref;
-    st.ref = crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random().toString(36).slice(2);
-    fetch(window.API_URL, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify({ accion: "anular", ref: viejo }) }).catch(() => {});
-    st.medio = ""; st.comp = null; st.totalEsperado = 0; irA(2);
-  };
+  const bm = $("#pagomp"); if (bm) { bm.dataset.html = bm.innerHTML; bm.onclick = () => irAPagarMp(st.ref, bm); }
+  const rm = $("#revisarmp"); if (rm) rm.onclick = () => volvioDeMp(st.ref);
+  const cb = $("#cambiar"); if (cb) cb.onclick = () => preguntar("¿Cambiar tu pedido?", "Anulamos este pedido y vuelves a «Envío» con todo cargado para corregir lo que quieras.",
+    [["Sí, cambiar mi pedido", "g", cambiarPedido], ["No, seguir con el pago", "sec", () => {}]]);
   const b = $("#cptodo"); if (b) b.onclick = () => copiar(filas.map((f) => f[1]).join("\n"), "Datos copiados ✅ Pégalos en tu app del banco");
 }
 
@@ -680,10 +739,39 @@ function barra() {
   }
   $("#atras").hidden = st.paso !== 2;
   $("#sig").textContent = st.paso === 1 ? "Continuar al envío →" : (st.enviando ? "Enviando…" : "Ir a pagar →");
-  $("#sig").disabled = (st.paso === 1 && u <= 0) || st.enviando;
+  $("#sig").disabled = (st.paso === 1 && u <= 0 && !(st.arma && st.arma.neg + st.arma.bla > 0)) || st.enviando;   // con una caja a medio armar también se puede seguir
+  guardarSesion();
 }
 
-function irA(p) { if (p === 1) st.ofertaVista = false; st.paso = p; window.scrollTo(0, 0); (p === 1 ? dibujarPaso1 : dibujarPaso2)(); barra(); }
+function irA(p, desdeHistorial) {
+  if (p === 1) st.ofertaVista = false;
+  if (!desdeHistorial && history.state && history.state.paso !== p) history.pushState({ paso: p }, "");
+  else if (!history.state) history.replaceState({ paso: p }, "");
+  st.paso = p; window.scrollTo(0, 0); (p === 1 ? dibujarPaso1 : dibujarPaso2)(); barra();
+}
+// Botón "atrás" del celular o del navegador: se mueve entre pasos en vez de salir de la página.
+window.addEventListener("popstate", (e) => {
+  const destino = (e.state && e.state.paso) || 1;
+  if ($("#oferta")) $("#oferta").remove();
+  if ($("#pregunta")) $("#pregunta").remove();
+  if (st.paso >= NOMBRES.length) { location.replace(location.pathname); return; }   // pedido terminado: empieza uno nuevo
+  if (st.paso === 3) {
+    if (destino >= 3) return;
+    history.pushState({ paso: 3 }, "");   // se queda en el pago hasta que el cliente decida
+    preguntar("¿Quieres cambiar tu pedido?", `Tu pedido${st.ped && st.ped.codigo ? " #" + esc(st.ped.codigo) : ""} todavía no está pagado. Si lo cambias, lo anulamos y vuelves a editarlo.`,
+      [["Sí, cambiar mi pedido", "g", cambiarPedido], ["No, seguir con el pago", "sec", () => {}]]);
+    return;
+  }
+  if (destino === 2 && (totales()[1] <= 0 || st.paso === 2)) { history.replaceState({ paso: 1 }, ""); irA(1, true); return; }   // (2→2 pasa al anular un pedido: se sigue al carrito)
+  if (destino === 1 || destino === 2) irA(destino, true);
+});
+// Volver desde Mercado Pago con el botón atrás: el navegador puede mostrar la página congelada con el botón en "Abriendo…".
+window.addEventListener("pageshow", (e) => {
+  if (!e.persisted || !st.cat) return;
+  const b = $("#pagomp"); if (b) { b.disabled = false; b.innerHTML = b.dataset.html || b.innerHTML; }
+  if (st.paso === 3 && st.ref) volvioDeMp(st.ref, true);
+});
+window.addEventListener("pagehide", guardarSesion);
 
 // Antes de pagar con envío: "agrega X y tu envío es gratis". El cliente elige y sigue directo al pago.
 function ofrecerEnvioGratis() {
@@ -706,7 +794,9 @@ function ofrecerEnvioGratis() {
     ${opciones.map((o) => `<button class="btn g" data-o="${o[0]}" style="margin-top:10px;width:100%;justify-content:space-between;display:flex;align-items:center;padding:0 16px"><span>${o[1]}</span><span style="font-weight:400">+${peso(extra(o[2], o[3]))}</span></button>`).join("")}
     <button class="btn sec" id="ofno" style="margin-top:10px;width:100%">No, gracias. Pagar con envío (${peso(costo)})</button></div>`;
   document.body.appendChild(fondo);
-  const cerrar = () => fondo.remove();
+  const esc2 = (e) => { if (e.key === "Escape") { cerrar(); st.ofertaVista = false; } };
+  const cerrar = () => { fondo.remove(); document.removeEventListener("keydown", esc2); };
+  document.addEventListener("keydown", esc2);
   fondo.onclick = (ev) => { if (ev.target === fondo) { cerrar(); st.ofertaVista = false; } };   // tocar afuera: vuelve al formulario sin pagar
   $("#ofno").onclick = () => { cerrar(); enviar(); };
   fondo.querySelectorAll("button[data-o]").forEach((b) => b.onclick = () => {
@@ -718,12 +808,13 @@ function ofrecerEnvioGratis() {
 }
 
 async function enviar() {
+  if (st.enviando || $("#oferta") || $("#pregunta")) return;   // doble toque o ventana abierta
   const tel = (st.tel || "").replace(/\D/g, "");
   if (tel.length !== 8) { avisar("Escribe los 8 números de tu celular, los que van después del +569."); return; }
   if ((st.nombre || "").trim().length < 2) { avisar("Escribe tu nombre."); return; }
   if (!/^[^@\s]+@[^@\s]+\.[^@\s]{2,}$/.test((st.correo || "").trim())) { avisar("Escribe un correo válido, por ejemplo nombre@gmail.com."); return; }
-  const fg = faltaGranel();
-  if (fg && !(st.entrega === "despacho" && despachoActivo())) { avisar(`Para retiro gratis en el metro, el mínimo es de ${st.cat.minimo_granel || 4} alfajores. Agrega ${fg} más o elige entrega a domicilio.`); return; }
+  const fg = despachoActivo() ? 0 : faltaGranel();
+  if (fg) { avisar(`Para retiro gratis en el metro, el mínimo es de ${st.cat.minimo_granel || 4} alfajores. Agrega ${fg} más o elige entrega a domicilio.`); return; }
   if (!agendaActiva() && st.programar) {
     const f = st.fechaProg, min = sumarHabiles(hoyLocal(), 2), max = sumarDiasLocal(hoyLocal(), 60);
     if (!f) { avisar("Elige el día para programar tu pedido, o marca «Lo antes posible»."); return; }
@@ -745,7 +836,7 @@ async function enviar() {
       if (v && (v.estado === "no" || v.estado === "otra") && !st.dirForzada) {
         avisar("Revisa tu dirección antes de seguir."); const d = $("#dirok"); if (d) d.scrollIntoView({ behavior: "smooth", block: "center" }); return; }
     }
-    if (!st.ofertaVista && envioActual() > 0) { ofrecerEnvioGratis(); return; }   // le falta poco para el envío gratis: se le ofrece una vez
+    if (!st.ofertaVista && envioActual() > 0 && negroId()) { ofrecerEnvioGratis(); return; }   // le falta poco para el envío gratis: se le ofrece una vez
   }
   st.enviando = true; barra();
   try {
@@ -758,13 +849,18 @@ async function enviar() {
     st.enviando = false;
     if (!d.ok) {
       avisar(d.error || "No pudimos guardar tu pedido. Intenta de nuevo."); barra();
+      if (st.codigo && /código/i.test(d.error || "")) {   // el código dejó de valer: se ofrece seguir sin él
+        preguntar("Tu código ya no es válido", "Puedes seguir con el precio normal o escribirnos por WhatsApp.",
+          [["Seguir sin código", "g", async () => { await recargarPrecios(); st.codigo = ""; dibujarPaso2(); barra(); }], ["Volver", "sec", () => {}]]);
+      }
       if (agendaActiva() && /día/.test(d.error || "")) {   // otro cliente tomó el cupo: se vuelven a pedir los días
         try { const c2 = await (await fetch(window.API_URL)).json(); if (c2.ok) { st.cat.agenda = c2.agenda; st.fecha = ""; dibujarPaso2(); } } catch (e) {}
       }
       return;
     }
     try { localStorage.setItem("av_cliente", JSON.stringify({ nombre: st.nombre, tel: st.tel, correo: st.correo, comuna: st.comuna, direccion: st.dirForzada ? "" : st.direccion, depto: st.depto })); } catch (e) {}   // la próxima vez se rellena solo
-    st.paso = 3; window.scrollTo(0, 0); barra(); dibujarPaso3(d.pedido, d.pago || {});
+    history.pushState({ paso: 3 }, "");
+    st.paso = 3; st.avisoMp = ""; window.scrollTo(0, 0); barra(); dibujarPaso3(d.pedido, d.pago || {});
   } catch (e) {
     st.enviando = false; barra();
     avisar("Sin conexión. Revisa tu internet e intenta de nuevo.");
@@ -776,56 +872,88 @@ function faltaGranel() { const min = st.cat.minimo_granel || 4, n = alfajores().
   return !st.cajas.length && n > 0 && n < min ? min - n : 0; }
 $("#tot").style.cursor = "pointer";
 $("#tot").onclick = () => { if (st.paso !== 1) return; const c = $("#carrito"); if (c && !c.hidden) c.scrollIntoView({ behavior: "smooth", block: "center" }); };
-$("#sig").onclick = () => { if (st.paso === 1) { if (totales()[1] > 0) irA(2); } else enviar(); };
+$("#sig").onclick = () => {
+  if (st.paso !== 1) { enviar(); return; }
+  if (st.arma && st.arma.neg + st.arma.bla > 0) {   // armó una caja pero no tocó "Agregar caja"
+    const c = cajasCat().find((p) => p.navidad === st.arma.tam), falta = st.arma.tam - st.arma.neg - st.arma.bla;
+    if (falta === 0 && c) {
+      st.cajas.push({ tam: st.arma.tam, neg: st.arma.neg, bla: st.arma.bla, cajaId: c.id }); st.cant[c.id] = (st.cant[c.id] || 0) + 1; st.arma = null;
+      avisar("Agregamos tu caja al pedido 🎁");
+    } else {
+      preguntar("Tu caja no está completa", `A la caja de ${st.arma.tam} le ${falta > 0 ? `faltan ${falta} alfajor${falta > 1 ? "es" : ""}` : `sobran ${-falta}`}. ¿Qué quieres hacer?`,
+        [["Completar la caja", "g", () => { const n = $("#navidad"); if (n) n.scrollIntoView({ behavior: "smooth", block: "center" }); }],
+         ["Seguir sin esa caja", "sec", () => { st.arma = null; dibujarPaso1(); barra(); if (totales()[1] > 0) irA(2); }]]);
+      return;
+    }
+  }
+  if (totales()[1] > 0) irA(2);
+};
 
 async function irAPagarMp(ref, boton) {
-  if (boton) { boton.disabled = true; boton.textContent = "Abriendo Mercado Pago…"; }
+  if (boton && boton.disabled) return;
+  const html = boton ? (boton.dataset.html || boton.innerHTML) : "";
+  if (boton) { boton.dataset.html = html; boton.disabled = true; boton.textContent = "Abriendo Mercado Pago…"; }
   try {
     const r = await fetch(window.API_URL, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" },
       body: JSON.stringify({ accion: "mp_link", ref: ref, volver: location.origin + location.pathname }) });
     const d = await r.json();
-    if (d.ok && d.pagado) { avisar("Este pedido ya está pagado ✅"); return; }
-    if (d.ok && d.url) { location.href = d.url; return; }
+    if (d.ok && d.pagado) { pantallaFinal(st.ped, "pagado"); return; }
+    if (d.ok && d.url) { guardarSesion(); location.href = d.url; setTimeout(() => { if (boton) { boton.disabled = false; boton.innerHTML = html; } }, 8000); return; }
     avisar(d.error || "No pudimos abrir el pago con tarjeta. Transfiere, por favor.");
   } catch (e) { avisar("Sin conexión. Revisa tu internet e intenta de nuevo."); }
-  if (boton) { boton.disabled = false; boton.textContent = "Pagar con Mercado Pago"; }
+  if (boton) { boton.disabled = false; boton.innerHTML = html; }
 }
 
 // El cliente vuelve desde Mercado Pago a ?ref=...&mp=1: se pregunta al script si el pago quedó aprobado.
-async function volvioDeMp(ref) {
-  $("#sub").textContent = "Pago con tarjeta";
-  $("#barra").hidden = true;
-  const c = st.cat || {};
-  const wa = c.whatsapp ? `<a class="btn out" style="margin-top:12px" target="_blank" rel="noopener" href="https://wa.me/${waNum(c.whatsapp)}?text=${encodeURIComponent("Hola! Pagué con tarjeta mi pedido de alfajores y quiero confirmar.")}">💬 Escríbenos por WhatsApp</a>` : "";
-  $("#cuerpo").innerHTML = `<div class="card"><b>Revisando tu pago…</b><div class="mut sm" style="margin-top:6px">Un momento 🙏</div></div>`;
+async function volvioDeMp(ref, silencioso) {
+  $("#barra").hidden = true; $("#sub").hidden = true;
+  if (!silencioso) $("#cuerpo").innerHTML = indicador() + `<div class="card"><b>Revisando tu pago…</b><div class="mut sm" style="margin-top:6px">Un momento 🙏</div></div>`;
   let d = {};
-  for (let i = 0; i < 4; i++) {
+  for (let i = 0; i < (silencioso ? 1 : 4); i++) {
     try { const r = await fetch(window.API_URL, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify({ accion: "estado_mp", ref: ref }) }); d = await r.json(); } catch (e) { d = {}; }
     if (d.pagado) break;
     await new Promise((ok) => setTimeout(ok, 2500));
   }
-  if (d.pagado) {
-    let v = {};
-    try { v = await (await fetch(window.API_URL, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify({ accion: "ver_pedido", ref: ref }) })).json(); } catch (e) {}
-    pantallaFinal(v.ok ? v.pedido : null, "pagado");
-  } else {
-    $("#cuerpo").innerHTML = `<div class="card"><b>Aún no vemos tu pago</b>
-      <div class="mut sm" style="margin-top:6px">${d.estado === "rejected" ? "Mercado Pago rechazó el pago. Puedes intentar con otra tarjeta." : "Si alcanzaste a pagar, puede tardar unos minutos en confirmarse."}</div>
-      <button class="btn g" id="reint" style="margin-top:12px">Pagar con Mercado Pago</button>
-      <button class="btn out" id="revisar">Volver a revisar</button>${wa}</div>`;
-    $("#reint").onclick = () => irAPagarMp(ref, $("#reint"));
-    $("#revisar").onclick = () => volvioDeMp(ref);
-  }
+  let v = {};
+  try { v = await api({ accion: "ver_pedido", ref: ref }); } catch (e) {}
+  if (d.pagado || v.pagado) { pantallaFinal(v.ok ? v.pedido : st.ped, "pagado"); return; }
+  // No se pagó (canceló, rechazado o en proceso): vuelve al paso de pago con TODAS las opciones, sin quedar atrapado.
+  st.avisoMp = d.estado === "rejected" ? "rejected" : (d.estado === "pending" || d.estado === "in_process") ? d.estado : "cancelado";
+  if (silencioso && st.avisoMp === "cancelado" && st.paso === 3 && st.ped) { dibujarPaso3(st.ped, st.pago || {}); return; }
+  mostrarPedido(ref, v);
 }
 
 // Link "Pagar mi pedido" del correo: vuelve al paso de pago de ese pedido.
 async function pagarDespues(ref) {
+  $("#barra").hidden = true; $("#sub").hidden = true;
   $("#cuerpo").innerHTML = `<div class="card"><b>Buscando tu pedido…</b></div>`;
   let d = {};
-  try { const r = await fetch(window.API_URL, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify({ accion: "ver_pedido", ref: ref }) }); d = await r.json(); } catch (e) {}
-  if (!d.ok) { $("#cuerpo").innerHTML = `<div class="card"><b>${esc(d.error || "No pudimos cargar tu pedido.")}</b><div class="mut sm" style="margin-top:6px">Escríbenos por WhatsApp y te ayudamos.</div><a class="btn g" style="margin-top:12px" href="${location.pathname}">Hacer un pedido nuevo</a></div>`; $("#barra").hidden = true; return; }
-  if (d.pagado || d.comprobante) { st.ref = ref; pantallaFinal(d.pedido, d.pagado ? "pagado" : "comp"); return; }
-  st.ref = ref; st.desdeCorreo = true; st.nombre = d.pedido.nombre; st.paso = 3; barra(); dibujarPaso3(d.pedido, d.pago || {});
+  try { d = await api({ accion: "ver_pedido", ref: ref }); } catch (e) { d = { ok: false, error: "Sin conexión. Revisa tu internet.", red: true }; }
+  mostrarPedido(ref, d);
+}
+// Decide qué ver de un pedido ya hecho: pagado, comprobante enviado, vencido, anulado o pendiente de pago.
+function mostrarPedido(ref, d) {
+  const c = st.cat || {};
+  const wa = c.whatsapp ? `<a class="btn out" style="margin-top:10px" target="_blank" rel="noopener" href="https://wa.me/${waNum(c.whatsapp)}?text=${encodeURIComponent("Hola! Tengo una consulta sobre mi pedido.")}">💬 Escríbenos por WhatsApp</a>` : "";
+  if (!d.ok) {
+    guardarPendiente(""); $("#barra").hidden = true;
+    $("#cuerpo").innerHTML = `<div class="card"><b>${esc(d.error || "No pudimos cargar tu pedido.")}</b><div class="mut sm" style="margin-top:6px">${d.red ? "Intenta de nuevo en un momento." : "Escríbenos por WhatsApp y te ayudamos."}</div>
+      ${d.red ? `<button class="btn g" id="reintentar" style="margin-top:12px">Intentar de nuevo</button>` : ""}<a class="btn ${d.red ? "sec" : "g"}" style="margin-top:12px" href="${location.pathname}">Hacer un pedido nuevo</a>${wa}</div>`;
+    const ri = $("#reintentar"); if (ri) ri.onclick = () => pagarDespues(ref);
+    return;
+  }
+  st.ref = ref;
+  if (d.pagado || d.comprobante) { pantallaFinal(d.pedido, d.pagado ? "pagado" : "comp"); return; }
+  if (d.vencido) {   // pasaron más de 3 horas sin pago: se ofrece volver a armarlo tal cual
+    guardarPendiente(""); $("#barra").hidden = true;
+    $("#cuerpo").innerHTML = `<div class="card"><b>La reserva de este pedido venció ⏳</b>
+      <div class="mut sm" style="margin-top:6px">Reservamos los pedidos por 2 horas mientras llega el pago. Puedes volver a hacerlo en un toque, con los mismos productos y datos.</div>
+      <button class="btn g" id="rearmar" style="margin-top:12px">Volver a hacer este pedido</button>${wa}</div>`;
+    $("#rearmar").onclick = () => { st.ped = d.pedido; cargarDesdePedido(d.pedido); st.ref = nuevoRef(); api({ accion: "anular", ref: ref }).catch(() => {});
+      history.replaceState({ paso: 2 }, ""); st.paso = 2; dibujarPaso2(); barra(); };
+    return;
+  }
+  st.desdeCorreo = true; st.nombre = st.nombre || d.pedido.nombre; st.paso = 3; barra(); dibujarPaso3(d.pedido, d.pago || {});
 }
 
 async function iniciar() {
@@ -836,8 +964,18 @@ async function iniciar() {
     if (!c.ok) throw new Error();
     st.cat = c;
     const q = new URLSearchParams(location.search);
+    const ses = leerSesion();
+    if (ses && ses.cant) {   // recargó la página o volvió atrás: se recupera el carrito y los datos
+      const ids = {}; c.productos.forEach((p) => ids[p.id] = true);
+      CAMPOS_SESION.forEach((k) => { if (ses[k] !== undefined && ses[k] !== null) st[k] = ses[k]; });
+      Object.keys(st.cant).forEach((k) => { if (!ids[k]) delete st.cant[k]; });
+      st.cajas = (st.cajas || []).filter((k) => ids[k.cajaId]);
+      if (st.codigo) await aplicarCodigo(st.codigo, true);
+    }
+    history.replaceState({ paso: 1 }, "");
     if (q.get("mp") && q.get("ref")) { volvioDeMp(q.get("ref").replace(/[^a-zA-Z0-9-]/g, "")); return; }
     if (q.get("pagar")) { pagarDespues(q.get("pagar").replace(/[^a-zA-Z0-9-]/g, "")); return; }
+    if (ses && ses.paso === 3 && ses.ref) { pagarDespues(ses.ref); return; }
     if (!c.activo) {
       sub.textContent = "Pedidos de alfajores";
       $("#cuerpo").innerHTML = `<div class="card"><b>Por ahora no estamos tomando pedidos 🙏</b><div class="mut sm" style="margin-top:6px">Escríbenos por Instagram @alfajores_vicencio y te ayudamos.</div></div>`;
@@ -845,7 +983,7 @@ async function iniciar() {
     }
     sub.textContent = ""; sub.hidden = true;
     try { const g = JSON.parse(localStorage.getItem("av_cliente") || "null"); if (g) ["nombre", "tel", "correo", "comuna", "direccion", "depto"].forEach((k) => { if (g[k] && !st[k]) st[k] = g[k]; }); } catch (e) {}
-    irA(1);
+    if (ses && ses.paso === 2 && totales()[1] > 0) { history.replaceState({ paso: 1 }, ""); irA(2); } else irA(1);
     const pend = leerPendiente();
     if (pend) {   // volvió atrás desde Mercado Pago o cerró la página: se ofrece retomar el pago
       try {
@@ -856,7 +994,7 @@ async function iniciar() {
       } catch (e) {}
     }
   } catch (e) {
-    sub.textContent = "No pudimos cargar la página. Intenta de nuevo en un momento o escríbenos por Instagram @alfajores_vicencio.";
+    sub.hidden = false; sub.innerHTML = `No pudimos cargar la página. Revisa tu conexión.<br><button class="btn g" style="margin-top:12px;width:auto;padding:0 20px" onclick="location.reload()">Intentar de nuevo</button>`;
   }
 }
 iniciar();

@@ -129,6 +129,7 @@ function crearPedido(d) {
     });
     if (unidades <= 0) return json({ ok: false, error: "Elige al menos 1 alfajor." });
     const sueltos = lineas.filter(l => !(catalogo[l.producto_id] || {}).navidad).reduce((a, l) => a + l.cantidad, 0);
+    if ((c.despacho || {}).activo && d.entrega !== "despacho") return json({ ok: false, error: "Elige la entrega a domicilio y escribe tu dirección." });   // ya no hay retiro en el metro
     const retiro = !(d.entrega === "despacho" && (c.despacho || {}).activo);
     if (retiro && sueltos === unidades && sueltos < MINIMO_GRANEL) return json({ ok: false, error: "Para retiro gratis en el metro, el mínimo es de " + MINIMO_GRANEL + " alfajores." });
     let fechaEntrega = "";
@@ -153,7 +154,7 @@ function crearPedido(d) {
     const comuna = despacho ? String(d.comuna || "").replace(/\s+/g, " ").trim().substring(0, 40) : "";
     const direccion = despacho ? String(d.direccion || "").replace(/\s+/g, " ").trim().substring(0, 120) : "";
     if (despacho && (!comuna || direccion.length < 5)) return json({ ok: false, error: "Escribe tu comuna y dirección para el despacho." });
-    if (despacho && (c.despacho.comunas || []).indexOf(comuna) < 0) return json({ ok: false, error: "Por ahora solo entregamos a domicilio en " + (c.despacho.comunas || []).join(", ") + ". Puedes retirar gratis en el metro Escuela Militar." });
+    if (despacho && (c.despacho.comunas || []).indexOf(comuna) < 0) return json({ ok: false, error: "Por ahora solo entregamos a domicilio en " + (c.despacho.comunas || []).join(", ") + ". Si estás en otra comuna, escríbenos por WhatsApp." });
     const envio = calcularEnvio(c, total, entrega, comuna);
     const creado = Utilities.formatDate(new Date(), "America/Santiago", "yyyy-MM-dd HH:mm");
     h.appendRow([ref, "'" + creado, nombre, "'" + tel, notaFinal, JSON.stringify(lineas), total + envio, "", entrega, comuna, direccion, envio, correo, "", "", "", fechaEntrega ? "'" + fechaEntrega : "", ""]);
@@ -573,7 +574,7 @@ const TEXTOS_CORREO = {
   recibido: { asunto: "Recibimos tu pedido", titulo: "¡Recibimos tu pedido!", texto: "Tu pedido quedó anotado. Si aún no pagas, puedes hacerlo con tarjeta o transferencia con el botón de abajo. Lo reservamos por 2 horas; si no recibimos el pago, se libera." },
   recordatorio: { asunto: "Tu pedido te está esperando", titulo: "¿Se te quedó algo? 🤎", texto: "Vimos que dejaste tu pedido pero aún no nos llega el pago. Te lo tenemos guardado un ratito más: para reservarlo solo falta pagar con el botón de abajo (tarjeta o transferencia). Si ya pagaste, ignora este correo. ¡Gracias!" },
   pagado: { asunto: "Pago confirmado", titulo: "Pago confirmado ✅", texto: "Recibimos tu pago. Tu pedido está confirmado y te escribiremos por WhatsApp para coordinar la hora de entrega." },
-  listo: { asunto: "Tu pedido está listo", titulo: "Tu pedido está listo 🎁", texto: "Ya está listo para retirar en el metro Escuela Militar. Coordinamos la hora por WhatsApp." },
+  listo: { asunto: "Tu pedido está listo", titulo: "Tu pedido está listo 🎁", texto: "Ya está listo y pronto sale hacia tu dirección. Te avisamos por WhatsApp." },
   en_camino: { asunto: "Tu pedido va en camino", titulo: "Tu pedido va en camino 🚗", texto: "Salió hacia tu dirección. Te avisaremos por WhatsApp al llegar." },
   entregado: { asunto: "¡Gracias por tu compra!", titulo: "¡Gracias! 🤎", texto: "Esperamos que disfrutes tus alfajores. Nos ayudaría mucho saber qué te parecieron." }
 };
@@ -584,7 +585,7 @@ function cuerpoCorreo(f, I, tipo) {
   const filas = lineas.map(l => `<tr><td style="padding:4px 0">${l.cantidad} × ${escH(l.nombre)}</td><td style="padding:4px 0;text-align:right">${pesos(l.cantidad * l.precio)}</td></tr>`).join("");
   const envio = Number(f[I.envio] || 0), desp = String(f[I.entrega]) === "despacho";
   const dia = fechaBonita(f[I.fecha_entrega]);
-  const entrega = desp ? `🚗 Despacho a ${escH(f[I.direccion])}, ${escH(f[I.comuna])}` : "🚇 Retiro en metro Escuela Militar";
+  const entrega = desp ? `🚗 Despacho a ${escH(f[I.direccion])}, ${escH(f[I.comuna])}` : "📦 Entrega por coordinar";
   if (tipo === "recordatorio" && (String(f[I.mp_pago] || "") || String(f[I.anulado] || "") || tieneComprobante(ref))) return "";
   const pagar = (tipo === "recibido" || tipo === "recordatorio") && !String(f[I.mp_pago] || "") ? `<p style="text-align:center;margin:24px 0"><a href="${PAGINA}/?pagar=${encodeURIComponent(ref)}" style="background:#BC7B69;color:#2A1A12;text-decoration:none;padding:12px 22px;border-radius:999px;font-weight:600">Pagar mi pedido</a></p>` : "";
   const boton = pagar || (tipo === "entregado" ? `<p style="text-align:center;margin:24px 0"><a href="${PAGINA}/opinion.html?p=${encodeURIComponent(ref)}" style="background:#BC7B69;color:#2A1A12;text-decoration:none;padding:12px 22px;border-radius:999px;font-weight:600">Dejar mi opinión</a></p>` : "");
@@ -638,7 +639,9 @@ function filaAPedido(f, I) {
   let lineas = []; try { lineas = JSON.parse(f[I.lineas] || "[]"); } catch (e) {}
   return { ref: String(f[0]), codigo: codigoCorto(f[0]), nombre: String(f[I.nombre]), lineas: lineas, total: Number(f[I.total] || 0),
            entrega: String(f[I.entrega] || "retiro"), comuna: String(f[I.comuna] || ""), direccion: String(f[I.direccion] || ""),
-           envio: Number(f[I.envio] || 0), fecha_entrega: String(f[I.fecha_entrega] || "").replace(/^'/, "") };
+           envio: Number(f[I.envio] || 0), fecha_entrega: String(f[I.fecha_entrega] || "").replace(/^'/, ""),
+           nota: String(f[I.nota] || ""), telefono: String(f[I.telefono] || "").replace(/\D/g, ""), correo: String(f[I.correo] || ""),
+           creado: String(f[I.creado] || "").replace(/^'/, "") };
 }
 
 function verPedido(d) {
@@ -647,7 +650,11 @@ function verPedido(d) {
   const h = hoja(), x = buscarFila(h, ref), I = {}; COLUMNAS.forEach((k, i) => I[k] = i);
   if (!x || String(x.f[I.anulado] || "")) return json({ ok: false, error: "No encontramos este pedido. Si lo cambiaste, revisa el correo del pedido nuevo." });
   const c = leerCfg();
-  return json({ ok: true, pagado: !!String(x.f[I.mp_pago] || ""), comprobante: tieneComprobante(ref), pedido: filaAPedido(x.f, I), pago: c.pago || {} });
+  const pagado = !!String(x.f[I.mp_pago] || ""), comprobante = tieneComprobante(ref), ped = filaAPedido(x.f, I);
+  // Reserva vencida: sin pago ni comprobante después de 3 horas (el ERP la pasa a "vencido" y libera el cupo)
+  const limite = Utilities.formatDate(new Date(Date.now() - 3 * 3600e3), "America/Santiago", "yyyy-MM-dd HH:mm");
+  const vencido = !pagado && !comprobante && /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}/.test(ped.creado) && ped.creado.substring(0, 16) < limite;
+  return json({ ok: true, pagado: pagado, comprobante: comprobante, vencido: vencido, pedido: ped, pago: c.pago || {} });
 }
 
 function tieneComprobante(ref) {
