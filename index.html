@@ -717,12 +717,11 @@ function dibujarCarrito() {
     st.cajas.map((k, i) => `<div class="cl"><div style="min-width:0"><div style="font-weight:500">🎁 Caja de ${k.tam}</div><div class="mut sm">${sabTxt(k)} · ${peso(precioCaja(k.cajaId))}</div></div>
       <button class="q" data-qc="${i}">Quitar</button></div>`).join("") +
     sueltos.map((p) => `<div class="cl"><div style="min-width:0"><div style="font-weight:500">${/negro/i.test(p.nombre) ? "⚫ Negros" : /blanco/i.test(p.nombre) ? "⚪ Blancos" : esc(sabor(p.nombre))} a granel</div><div class="mut sm">${st.cant[p.id]} × ${peso(p.precio)} = ${peso(st.cant[p.id] * p.precio)}</div></div>
-      <div class="mini2"><button data-cid="${p.id}" data-cd="-1" aria-label="Quitar uno">−</button><span class="num" style="min-width:28px;text-align:center">${st.cant[p.id]}</span><button data-cid="${p.id}" data-cd="1" aria-label="Sumar uno">+</button></div></div>`).join("");
+      <button class="q" data-qg="${p.id}">Quitar</button></div>`).join("");
   el.querySelectorAll("[data-qc]").forEach((b) => b.onclick = () => quitarCaja(Number(b.dataset.qc)));
-  el.querySelectorAll("[data-cid]").forEach((b) => b.onclick = () => {
-    const id = Number(b.dataset.cid) || b.dataset.cid;
-    st.cant[id] = Math.max(0, Math.min(100, (st.cant[id] || 0) + Number(b.dataset.cd)));
-    const n = $("#n" + id); if (n) n.textContent = st.cant[id];
+  el.querySelectorAll("[data-qg]").forEach((b) => b.onclick = () => {   // las cantidades se cambian con + y − de "Alfajores a granel"; aquí solo se quita
+    const id = Number(b.dataset.qg) || b.dataset.qg;
+    st.cant[id] = 0; const n = $("#n" + id); if (n) n.textContent = 0;
     barra();
   });
 }
