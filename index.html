@@ -780,7 +780,7 @@ function ofrecerAgregar(cfg) {
     <h2 class="tit" id="oftit" style="margin-top:6px">${cfg.titulo}</h2>
     <div class="mut sm">${cfg.texto.replace("{n}", `${n} alfajor${n > 1 ? "es" : ""}`)}</div>
     ${opciones.map((o) => `<button class="btn g" data-o="${o[0]}" style="margin-top:10px;width:100%;justify-content:space-between;display:flex;align-items:center;padding:0 16px"><span>${o[1]}</span><span style="font-weight:400">+${peso(extra(o[2], o[3]))}</span></button>`).join("")}
-    ${cfg.salidas.map((x, i) => `<button class="btn ${x[1]}" data-s="${i}" style="margin-top:10px;width:100%">${x[0]}</button>`).join("")}</div>`;
+    ${cfg.salidas.map((x, i) => `<button class="btn ${x[1]}" data-s="${i}"${x[3] ? ` id="${x[3]}"` : ""} style="margin-top:10px;width:100%">${x[0]}</button>`).join("")}</div>`;
   document.body.appendChild(fondo);
   const esc2 = (e) => { if (e.key === "Escape") { cerrar(); if (cfg.alCerrar) cfg.alCerrar(); } };
   const cerrar = () => { fondo.remove(); document.removeEventListener("keydown", esc2); };
@@ -799,7 +799,7 @@ function ofrecerEnvioGratis() {
   const r = st.cat.despacho, costo = Number(r.costo || 0);
   ofrecerAgregar({ icono: "🚗", titulo: "¡Unos alfajores más y tienes envío gratis!", texto: `Con {n} más te ahorras los <b>${peso(costo)}</b> del envío.`,
     falta: Number(r.minimo || 0) - totales()[0], listo: "¡Listo! Tu envío ahora es gratis 🎉", alCerrar: () => { st.ofertaVista = false; },
-    salidas: [[`No, gracias. Pagar con envío (${peso(costo)})`, "sec", () => enviar()]] });
+    salidas: [[`No, gracias. Pagar con envío (${peso(costo)})`, "sec", () => enviar(), "ofno"]] });
 }
 // Otra comuna con envío bajo el mínimo: agregar alfajores ahí mismo, ir al carrito o cambiar a retiro gratis.
 function ofrecerMinimoOtras() {
