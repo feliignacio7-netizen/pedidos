@@ -6,9 +6,9 @@
 <meta name="robots" content="noindex">
 <meta name="theme-color" content="#F3EEE6">
 <title>Pedidos · Alfajores Vicencio</title>
-<link rel="icon" type="image/png" href="favicon-pedidos.png">
-<link rel="apple-touch-icon" href="apple-touch-icon.png">
-<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" href="favicon-pedidos.png?v=verde">
+<link rel="apple-touch-icon" href="apple-touch-icon.png?v=verde">
+<link rel="manifest" href="manifest.webmanifest?v=verde">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -683,7 +683,39 @@ function barra() {
   $("#sig").disabled = (st.paso === 1 && u <= 0) || st.enviando;
 }
 
-function irA(p) { st.paso = p; window.scrollTo(0, 0); (p === 1 ? dibujarPaso1 : dibujarPaso2)(); barra(); }
+function irA(p) { if (p === 1) st.ofertaVista = false; st.paso = p; window.scrollTo(0, 0); (p === 1 ? dibujarPaso1 : dibujarPaso2)(); barra(); }
+
+// Antes de pagar con envío: "agrega X y tu envío es gratis". El cliente elige y sigue directo al pago.
+function ofrecerEnvioGratis() {
+  st.ofertaVista = true;
+  const r = st.cat.despacho, falta = Number(r.minimo || 0) - totales()[0], costo = Number(r.costo || 0);
+  const neg = alfajores().find((p) => p.id === negroId()), bla = alfajores().find((p) => p.id === blancoId());
+  const precio = Math.max((neg || {}).precio || 0, (bla || {}).precio || 0) || 1;
+  const n = Math.max(1, Math.ceil(falta / precio));
+  const extra = (a, b) => a * ((neg || {}).precio || precio) + b * ((bla || {}).precio || precio);
+  const mitad = [Math.ceil(n / 2), Math.floor(n / 2)];
+  const opciones = [neg && ["neg", `Agregar ${n} negro${n > 1 ? "s" : ""}`, n, 0], bla && ["bla", `Agregar ${n} blanco${n > 1 ? "s" : ""}`, 0, n],
+    neg && bla && n > 1 && ["mix", `Agregar ${mitad[0]} negro${mitad[0] > 1 ? "s" : ""} y ${mitad[1]} blanco${mitad[1] > 1 ? "s" : ""}`, mitad[0], mitad[1]]].filter(Boolean);
+  const fondo = document.createElement("div");
+  fondo.id = "oferta";
+  fondo.style.cssText = "position:fixed;inset:0;z-index:50;background:rgba(42,26,18,.45);display:flex;align-items:flex-end;justify-content:center";
+  fondo.innerHTML = `<div role="dialog" aria-modal="true" aria-labelledby="oftit" style="background:var(--sup);width:100%;max-width:520px;border-radius:20px 20px 0 0;padding:22px max(16px, env(safe-area-inset-left, 0px)) calc(18px + env(safe-area-inset-bottom, 0px));box-shadow:0 -8px 30px rgba(0,0,0,.15)">
+    <div style="font-size:30px;line-height:1">🚗</div>
+    <h2 class="tit" id="oftit" style="margin-top:6px">¡Unos alfajores más y tienes envío gratis!</h2>
+    <div class="mut sm">Con ${n} alfajor${n > 1 ? "es" : ""} más te ahorras los <b>${peso(costo)}</b> del envío.</div>
+    ${opciones.map((o) => `<button class="btn g" data-o="${o[0]}" style="margin-top:10px;width:100%;justify-content:space-between;display:flex;align-items:center;padding:0 16px"><span>${o[1]}</span><span style="font-weight:400">+${peso(extra(o[2], o[3]))}</span></button>`).join("")}
+    <button class="btn sec" id="ofno" style="margin-top:10px;width:100%">No, gracias. Pagar con envío (${peso(costo)})</button></div>`;
+  document.body.appendChild(fondo);
+  const cerrar = () => fondo.remove();
+  fondo.onclick = (ev) => { if (ev.target === fondo) { cerrar(); st.ofertaVista = false; } };   // tocar afuera: vuelve al formulario sin pagar
+  $("#ofno").onclick = () => { cerrar(); enviar(); };
+  fondo.querySelectorAll("button[data-o]").forEach((b) => b.onclick = () => {
+    const o = opciones.find((x) => x[0] === b.dataset.o);
+    if (o[2]) st.cant[negroId()] = (st.cant[negroId()] || 0) + o[2];
+    if (o[3]) st.cant[blancoId()] = (st.cant[blancoId()] || 0) + o[3];
+    cerrar(); avisar("¡Listo! Tu envío ahora es gratis 🎉"); enviar();
+  });
+}
 
 async function enviar() {
   const tel = (st.tel || "").replace(/\D/g, "");
@@ -713,6 +745,7 @@ async function enviar() {
       if (v && (v.estado === "no" || v.estado === "otra") && !st.dirForzada) {
         avisar("Revisa tu dirección antes de seguir."); const d = $("#dirok"); if (d) d.scrollIntoView({ behavior: "smooth", block: "center" }); return; }
     }
+    if (!st.ofertaVista && envioActual() > 0) { ofrecerEnvioGratis(); return; }   // le falta poco para el envío gratis: se le ofrece una vez
   }
   st.enviando = true; barra();
   try {
