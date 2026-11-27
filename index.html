@@ -175,6 +175,49 @@ async function montarMaps(alCambiar) {
     marcarDir();
   } catch (e) { /* sin Maps: queda el campo de texto normal */ }
 }
+// Revisión de la dirección con OpenStreetMap (gratis, sin llave): ¿existe esa calle en la comuna elegida?
+const NOMINATIM = "https://nominatim.openstreetmap.org/search?format=jsonv2&addressdetails=1&countrycodes=cl&limit=5&accept-language=es&q=";
+function comunasDe(a) { return [a.suburb, a.city_district, a.town, a.municipality, a.city, a.village].filter(Boolean); }
+async function verificarDir() {
+  const dir = (st.direccion || "").trim(), com = st.comuna, clave = sinTildes(dir) + "|" + com;
+  if (st.dirCheck && st.dirCheck.clave === clave) return st.dirCheck;
+  let r = { clave, estado: "error" };
+  try {
+    const buscar = async (q) => { const x = await fetch(NOMINATIM + encodeURIComponent(q)); return x.ok ? x.json() : []; };
+    const enComuna = (lista) => lista.find((x) => comunasDe(x.address || {}).some((c) => sinTildes(c) === sinTildes(com)));
+    const lista = await buscar(`${dir}, ${com}, Chile`);
+    let hit = enComuna(lista);
+    if (hit) r = { clave, estado: "ok" };
+    else {
+      const calle = dir.replace(/\s*(#|n°|nº|no\.?)?\s*\d.*$/i, "").trim();
+      const lista2 = calle.length >= 3 ? await buscar(`${calle}, ${com}, Chile`) : [];
+      if (enComuna(lista2)) r = { clave, estado: "ok" };
+      else {
+        const fuera = lista.concat(lista2).map((x) => comunasDe(x.address || {})[0]).find(Boolean);
+        r = fuera ? { clave, estado: "otra", donde: fuera } : { clave, estado: "no" };
+      }
+    }
+  } catch (e) { r = { clave, estado: "error" }; }   // sin conexión con el mapa: no se bloquea el pedido
+  st.dirCheck = r; return r;
+}
+function pintarDir(r) {
+  const el = $("#dirok"); if (!el || !r) return;
+  if (r.estado === "ok") { el.innerHTML = `<span style="color:var(--ok);font-weight:600">✓ Dirección encontrada en ${esc(st.comuna)}</span>`; return; }
+  if (r.estado === "error" || st.dirForzada) { el.innerHTML = st.dirForzada ? `<span class="mut">Ok, la revisamos contigo por WhatsApp.</span>` : ""; return; }
+  el.innerHTML = `<div style="color:#9a3b2a;margin-top:2px">${r.estado === "otra"
+      ? `Encontramos esa dirección en <b>${esc(r.donde)}</b>, no en ${esc(st.comuna)}. Revisa la calle o la comuna.`
+      : `No encontramos esa dirección en ${esc(st.comuna)}. Revisa que la calle y el número estén bien escritos.`}</div>
+    <button class="btn sec" id="dirsi" type="button" style="height:36px;margin-top:6px;padding:0 12px;font-size:13px">Mi dirección está bien escrita</button>`;
+  $("#dirsi").onclick = () => { st.dirForzada = true; pintarDir(r); };
+}
+async function revisarDir() {
+  if (!st.comuna || !/\d/.test(st.direccion || "")) return null;
+  const ya = st.dirCheck && st.dirCheck.clave === sinTildes((st.direccion || "").trim()) + "|" + st.comuna;
+  if (ya) return st.dirCheck;   // ya revisada: no se repinta (así no se pierde el clic en "Mi dirección está bien escrita")
+  const el = $("#dirok"); if (el) el.innerHTML = `<span class="mut">Revisando la dirección…</span>`;
+  const r = await verificarDir(); pintarDir(r); return r;
+}
+
 function despachoActivo() { return !!(st.cat && st.cat.despacho && st.cat.despacho.activo); }
 function comunaZona() { return !!(st.cat && st.cat.despacho && (st.cat.despacho.comunas || []).indexOf(st.comuna) >= 0); }
 function comunaElegida() { return st.comuna; }
@@ -336,7 +379,7 @@ function dibujarPaso2() {
   <div class="card"><h2 class="tit">Contacto</h2>
     <label class="c" for="nombre">Tu nombre</label><input id="nombre" autocomplete="name" value="${esc(st.nombre || "")}">
     <label class="c" for="tel">Tu WhatsApp</label>
-    <div class="tel"><div class="pref">${BANDERA}<span>+569</span></div><input id="tel" inputmode="numeric" pattern="[0-9]*" autocomplete="off" placeholder="1234 5678" value="${esc(st.tel || "")}"></div>
+    <div class="tel"><div class="pref">${BANDERA}<span>+569</span></div><input id="tel" type="tel" inputmode="numeric" autocomplete="tel" placeholder="1234 5678" value="${esc(st.tel || "")}"></div>
     <div class="xs mut" id="ayuda" style="margin-top:4px">Escribe solo los 8 números que siguen al +569</div>
     <label class="c" for="correo">Tu correo</label><input id="correo" type="email" inputmode="email" autocomplete="email" placeholder="nombre@gmail.com" value="${esc(st.correo || "")}">
     <div class="xs mut" style="margin-top:4px">Para enviarte la confirmación y el estado de tu pedido. No enviamos publicidad.</div>
@@ -362,9 +405,9 @@ function dibujarPaso2() {
     <div id="desp" ${st.entrega === "despacho" ? "" : "hidden"}>
       <label class="c" for="comuna">Comuna</label>
       <select id="comuna"><option value="">Elige tu comuna</option>${(r.comunas || []).map((x) => `<option ${st.comuna === x ? "selected" : ""}>${esc(x)}</option>`).join("")}</select>
-      <label class="c" for="dir">Dirección</label><div id="dirbox"><input id="dir" autocomplete="street-address" placeholder="Calle, número y depto" value="${esc(st.direccion)}"></div>
+      <label class="c" for="dir">Dirección</label><div id="dirbox"><input id="dir" autocomplete="address-line1" placeholder="Calle y número. Ej: Irarrázaval 1234" value="${esc(st.direccion)}"></div>
       <div class="xs" id="dirok" style="margin-top:4px"></div>
-      ${st.cat.maps_key ? `<label class="c" for="depto">Depto, casa o indicaciones <span class="mut">(opcional)</span></label><input id="depto" autocomplete="address-line2" placeholder="Ej: depto 502, torre B" value="${esc(st.depto || "")}">` : ""}
+      <label class="c" for="depto">Depto, casa o indicaciones <span class="mut">(opcional)</span></label><input id="depto" autocomplete="address-line2" placeholder="Ej: depto 502, torre B" value="${esc(st.depto || "")}">
       <div id="meta" style="margin-top:12px"></div>
     </div>` : ""}
   </div>
@@ -387,8 +430,9 @@ function dibujarPaso2() {
     document.querySelectorAll('input[name="ent"]').forEach((x) => x.onchange = () => {
       st.entrega = x.value; $("#desp").hidden = st.entrega !== "despacho";
       $("#o_retiro").classList.toggle("sel", st.entrega === "retiro"); $("#o_despacho").classList.toggle("sel", st.entrega === "despacho"); info(); });
-    $("#comuna").onchange = (e) => { st.comuna = e.target.value; info(); };
-    $("#dir").oninput = (e) => { st.direccion = e.target.value; st.dirValida = false; };
+    $("#comuna").onchange = (e) => { st.comuna = e.target.value; st.dirForzada = false; info(); if (!st.cat.maps_key && (st.direccion || "").trim()) revisarDir(); };
+    $("#dir").oninput = (e) => { st.direccion = e.target.value; st.dirValida = false; st.dirForzada = false; const o = $("#dirok"); if (o && !st.cat.maps_key) o.innerHTML = ""; };
+    if (!st.cat.maps_key) { $("#dir").onblur = () => { if ((st.direccion || "").trim().length >= 5) revisarDir(); }; if (st.dirCheck) pintarDir(st.dirCheck); }
     const dp = $("#depto"); if (dp) dp.oninput = (e) => st.depto = e.target.value;
     if (st.cat.maps_key) montarMaps(info);
   }
@@ -399,6 +443,8 @@ function dibujarPaso2() {
     if (f === 0) { a.textContent = "✓ Número completo"; a.style.color = "var(--ok)"; a.style.fontWeight = 600; }
     else { a.textContent = `Faltan ${f} número${f !== 1 ? "s" : ""} (son 8 después del +569)`; a.style.color = ""; a.style.fontWeight = 400; } }
   tel.addEventListener("input", () => { tel.value = limpiar(tel.value); st.tel = tel.value; ayuda(); });
+  tel.addEventListener("change", () => { tel.value = limpiar(tel.value); st.tel = tel.value; ayuda(); });   // autocompletado del teléfono (+56 9 …)
+  if (tel.value) ayuda();
   tel.addEventListener("paste", (e) => { e.preventDefault(); tel.value = limpiar((e.clipboardData || window.clipboardData).getData("text")); st.tel = tel.value; ayuda(); });
   if (agendaActiva() && st.fecha && !diasPosibles().some((x) => x.fecha === st.fecha)) st.fecha = "";
   const limite = () => { const el = $("#limite"); if (!el) return; const d = diasPosibles().find((x) => x.fecha === st.fecha);
@@ -408,8 +454,8 @@ function dibujarPaso2() {
   limite();
   document.querySelectorAll('input[name="prog"]').forEach((r) => r.onchange = () => { st.programar = r.value === "si"; dibujarPaso2(); });
   const fp = $("#fprog"); if (fp) fp.onchange = (e) => st.fechaProg = e.target.value;
-  $("#nombre").oninput = (e) => st.nombre = e.target.value;
-  $("#correo").oninput = (e) => st.correo = e.target.value.trim();
+  $("#nombre").oninput = $("#nombre").onchange = (e) => st.nombre = e.target.value;
+  $("#correo").oninput = $("#correo").onchange = (e) => st.correo = e.target.value.trim();
   ayuda();
 }
 
@@ -660,6 +706,13 @@ async function enviar() {
     if (!comunaElegida()) { avisar("Elige tu comuna para el despacho."); return; }
     if ((st.direccion || "").trim().length < 5) { avisar("Escribe tu dirección para el despacho."); return; }
     if (st.cat.maps_key && window.google && window.google.maps && !st.dirValida) { avisar("Elige tu dirección de la lista de Google Maps."); return; }
+    if (!st.cat.maps_key) {
+      if (!/\d/.test(st.direccion)) { avisar("Agrega el número de tu calle."); return; }
+      st.enviando = true; barra();
+      const v = await revisarDir(); st.enviando = false; barra();
+      if (v && (v.estado === "no" || v.estado === "otra") && !st.dirForzada) {
+        avisar("Revisa tu dirección antes de seguir."); const d = $("#dirok"); if (d) d.scrollIntoView({ behavior: "smooth", block: "center" }); return; }
+    }
   }
   st.enviando = true; barra();
   try {
@@ -667,7 +720,7 @@ async function enviar() {
       body: JSON.stringify({ accion: "pedido", ref: st.ref, nombre: st.nombre, telefono: tel, correo: (st.correo || "").trim(), nota: st.cajas.length ? "#C " + st.cajas.map((k) => `${k.cajaId}=${negroId()}:${k.neg},${blancoId()}:${k.bla}`).join(";") : "", cantidades: st.cant,
         esperado: (st.totalEsperado = totales()[0] + (envioActual() || 0)),
         fecha_entrega: agendaActiva() ? st.fecha : (st.programar ? st.fechaProg : ""), codigo: st.codigo || "",
-        entrega: despachoActivo() ? st.entrega : "retiro", comuna: comunaElegida(), direccion: [st.direccion || "", (st.depto || "").trim()].filter(Boolean).join(", "), trampa: ($("#trampa") || {}).value || "" }) });
+        entrega: despachoActivo() ? st.entrega : "retiro", comuna: comunaElegida(), direccion: [st.direccion || "", (st.depto || "").trim(), st.dirForzada ? "(⚠ dirección no encontrada en el mapa)" : ""].filter(Boolean).join(", "), trampa: ($("#trampa") || {}).value || "" }) });
     const d = await r.json();
     st.enviando = false;
     if (!d.ok) {
@@ -677,6 +730,7 @@ async function enviar() {
       }
       return;
     }
+    try { localStorage.setItem("av_cliente", JSON.stringify({ nombre: st.nombre, tel: st.tel, correo: st.correo, comuna: st.comuna, direccion: st.dirForzada ? "" : st.direccion, depto: st.depto })); } catch (e) {}   // la próxima vez se rellena solo
     st.paso = 3; window.scrollTo(0, 0); barra(); dibujarPaso3(d.pedido, d.pago || {});
   } catch (e) {
     st.enviando = false; barra();
@@ -757,6 +811,7 @@ async function iniciar() {
       return;
     }
     sub.textContent = ""; sub.hidden = true;
+    try { const g = JSON.parse(localStorage.getItem("av_cliente") || "null"); if (g) ["nombre", "tel", "correo", "comuna", "direccion", "depto"].forEach((k) => { if (g[k] && !st[k]) st[k] = g[k]; }); } catch (e) {}
     irA(1);
     const pend = leerPendiente();
     if (pend) {   // volvió atrás desde Mercado Pago o cerró la página: se ofrece retomar el pago
