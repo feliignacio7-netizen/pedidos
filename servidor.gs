@@ -166,6 +166,7 @@ function crearPedido(d) {
     if (despacho && (!comuna || direccion.length < 5)) return json({ ok: false, error: "Escribe tu comuna y dirección para el despacho." });
     const minOtras = Number(R.minimo_otras == null ? 15000 : R.minimo_otras), costoOtras = Number(R.costo_otras == null ? 5000 : R.costo_otras);
     const minPedido = Number(R.minimo_pedido == null ? 5000 : R.minimo_pedido);
+    if (otraComuna && amigo && total < minPedido) return json({ ok: false, error: "Con el código, el pedido mínimo para juntarnos en un punto es " + pesos(minPedido) + "." });
     if (!otraComuna && despacho && total < minPedido) return json({ ok: false, error: "El pedido mínimo para envío a domicilio es " + pesos(minPedido) + "." });
     if (otraComuna && despacho && total < minOtras) return json({ ok: false, error: "Para envío a otras comunas el pedido mínimo es " + pesos(minOtras) + ". También puedes elegir retiro gratis." });
     const gratisOtras = Number(R.gratis_otras == null ? 20000 : R.gratis_otras);

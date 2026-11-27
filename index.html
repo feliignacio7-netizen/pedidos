@@ -394,7 +394,7 @@ function dibujarPaso2() {
       <label class="c" for="comuna">Comuna</label>
       <select id="comuna"><option value="">Elige tu comuna</option>${(r.comunas || []).map((x) => `<option ${st.comuna === x ? "selected" : ""}>${esc(x)}</option>`).join("")}<option value="${OTRA}" ${esOtra() ? "selected" : ""}>Otra comuna</option></select>
       ${esOtra() ? `<label class="c" for="otra">¿Qué comuna?</label><input id="otra" autocomplete="address-level2" placeholder="Ej: Macul" value="${esc(st.otra || "")}">
-        ${st.codigo ? `<div class="sm" style="margin-top:10px;padding:10px 12px;border-radius:10px;background:#F6EDE6;color:var(--pri-t)">📍 Con tu código, <b>la entrega es en un punto a coordinar entre ambos</b>, gratis. Te escribimos por WhatsApp para ponernos de acuerdo.</div>`
+        ${st.codigo ? `<div class="sm" style="margin-top:10px;padding:10px 12px;border-radius:10px;background:#F6EDE6;color:var(--pri-t)">📍 Con tu código, <b>la entrega es en un punto a coordinar entre ambos</b>, gratis, con pedido mínimo de ${peso(minimoPedido())}. Te escribimos por WhatsApp para ponernos de acuerdo.</div>`
         : `<div class="mut sm" style="margin-top:10px">¿Cómo lo quieres recibir?</div>
         <label class="opc ${st.modoOtra === "retiro" ? "sel" : ""}" id="mo_retiro"><input type="radio" name="modo" value="retiro" ${st.modoOtra === "retiro" ? "checked" : ""}>
           <div style="flex:1"><div class="fila"><b style="font-weight:600">📍 Retiro en Las Condes</b><span class="gratis">Gratis</span></div><div class="mut sm">En un punto a coordinar por WhatsApp.</div></div></label>
@@ -859,6 +859,13 @@ async function enviar() {
     if (!st.comuna) { avisar("Elige tu comuna para el despacho."); return; }
     if (esOtra() && (st.otra || "").trim().length < 3) { avisar("Escribe en qué comuna estás."); const o = $("#otra"); if (o) o.focus(); return; }
     if (esOtra() && !st.entrega) { avisar("Elige retiro gratis en Las Condes o envío a domicilio."); return; }
+    if (esOtra() && st.codigo && totales()[0] < minimoPedido()) {   // con código en otra comuna: punto a coordinar, con mínimo
+      const falta = minimoPedido() - totales()[0];
+      if (negroId() || blancoId()) ofrecerAgregar({ icono: "📍", titulo: `Te faltan ${peso(falta)} para el pedido mínimo`, texto: `Para juntarnos en un punto, el pedido mínimo es ${peso(minimoPedido())}. Agrega {n} y seguimos.`,
+        falta, listo: "¡Listo! Ya llegas al mínimo 🎉", salidas: [["🛒 Ir al carrito para elegir", "out", () => irA(1), "minCarro"]] });
+      else avisar(`El pedido mínimo es ${peso(minimoPedido())}.`);
+      return;
+    }
     if (esOtra() && st.entrega === "despacho" && totales()[0] < minimoOtras()) { if (negroId() || blancoId()) ofrecerMinimoOtras(); else avisar(`Para envío a otras comunas el pedido mínimo es ${peso(minimoOtras())}.`); return; }
     if (st.entrega === "despacho" && (st.direccion || "").trim().length < 5) { avisar("Escribe tu dirección para el despacho."); const d = $("#dir"); if (d) d.focus(); return; }
     if (!esOtra() && st.entrega === "despacho" && totales()[0] < minimoPedido()) { if (negroId() || blancoId()) ofrecerMinimoZona(); else avisar(`El pedido mínimo para envío es ${peso(minimoPedido())}.`); return; }
