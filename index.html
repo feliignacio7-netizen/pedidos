@@ -608,17 +608,20 @@ function dibujarPaso3(ped, pago) {
     <div class="mut sm" style="margin-top:6px">Te llevamos al sitio seguro de Mercado Pago. Puedes pagar con tarjeta de débito, crédito o con tu saldo de Mercado Pago.</div>
     <button class="btn g" id="pagomp" style="margin-top:12px;width:100%">${LOGO_MP("height:18px;margin-right:8px;vertical-align:-3px")}Pagar ${peso(ped.total)}</button>
     <div class="mut xs" style="padding-top:8px">Al terminar vuelves a esta página y el pago <b>se confirma al instante</b>.</div></div>`;
-  const elegido = c.mp ? st.medio : "tef";
+  // Volvió de Mercado Pago sin pagar: no se vuelve a ofrecer la misma lista; se pasa directo a transferencia.
+  const enProceso = st.avisoMp === "pending" || st.avisoMp === "in_process", fallo = st.avisoMp === "cancelado" || st.avisoMp === "rejected";
+  const elegido = enProceso ? "" : fallo ? "tef" : c.mp ? st.medio : "tef";
   $("#cuerpo").innerHTML = indicador() + `
   ${st.totalEsperado && Math.round(st.totalEsperado) !== Math.round(ped.total) ? `<div class="card sm" style="border-color:var(--pri);background:#F6EDE6">Los precios se actualizaron mientras armabas tu pedido. El total final es <b>${peso(ped.total)}</b>.</div>` : ""}
-  <div class="card" style="${st.totalEsperado && Math.round(st.totalEsperado) !== Math.round(ped.total) ? "margin-top:12px" : ""}"><h2 class="tit">Pago${ped.codigo ? ` <span class="mut" style="font-size:15px;font-weight:400">· pedido #${esc(ped.codigo)}</span>` : ""}</h2><div class="mut sm">¡Gracias! Tu pedido${ped.codigo ? ` <b>#${esc(ped.codigo)}</b>` : ""} quedó anotado${ped.codigo ? " y te enviamos un correo con el resumen" : ""}. ${c.mp ? "Elige cómo quieres pagar:" : "Solo faltan 3 cosas:"}</div>
+  <div class="card" style="${st.totalEsperado && Math.round(st.totalEsperado) !== Math.round(ped.total) ? "margin-top:12px" : ""}"><h2 class="tit">Pago${ped.codigo ? ` <span class="mut" style="font-size:15px;font-weight:400">· pedido #${esc(ped.codigo)}</span>` : ""}</h2><div class="mut sm">¡Gracias! Tu pedido${ped.codigo ? ` <b>#${esc(ped.codigo)}</b>` : ""} quedó anotado${ped.codigo ? " y te enviamos un correo con el resumen" : ""}. ${enProceso ? "" : fallo ? "Te dejamos los datos para pagar por transferencia:" : c.mp ? "Elige cómo quieres pagar:" : "Solo faltan 3 cosas:"}</div>
     <button class="btn sec" id="cambiar" style="height:40px;margin-top:10px;padding:0 14px;font-size:14px">← Cambiar mi pedido</button></div>
   ${st.avisoMp ? `<div class="card sm" style="margin-top:12px;border-color:${st.avisoMp === "pending" || st.avisoMp === "in_process" ? "var(--bor2)" : "var(--pri)"};background:#F6EDE6">${
     st.avisoMp === "pending" || st.avisoMp === "in_process"
       ? `<b>⏳ Mercado Pago está procesando tu pago.</b><div style="margin-top:4px">Apenas se apruebe te llega un correo. <b>No vuelvas a pagar</b> para no cobrarte dos veces.</div><button class="btn out" id="revisarmp" style="margin-top:8px">Volver a revisar mi pago</button>`
-      : st.avisoMp === "rejected"
-      ? `<b>Mercado Pago rechazó el pago.</b><div style="margin-top:4px">No se hizo ningún cobro. Prueba con otra tarjeta o paga por transferencia.</div>`
-      : `<b>El pago con Mercado Pago no se completó.</b><div style="margin-top:4px">No se hizo ningún cobro. Puedes intentarlo de nuevo o pagar por transferencia. Si alcanzaste a pagar, toca «Ya pagué».</div><button class="btn out" id="revisarmp" style="margin-top:8px">Ya pagué, revisar de nuevo</button>`}</div>` : ""}
+      : `<b>${st.avisoMp === "rejected" ? "Mercado Pago rechazó el pago." : "El pago con Mercado Pago no se completó."}</b>
+        <div style="margin-top:4px">No se hizo ningún cobro. Abajo tienes los datos para pagar por transferencia.</div>
+        <div style="margin-top:8px">¿Prefieres tarjeta? <a href="#" id="otravezmp" style="color:var(--pri-t);font-weight:600">Intentar otra vez con Mercado Pago</a></div>
+        ${st.avisoMp === "rejected" ? "" : `<div style="margin-top:4px">¿Alcanzaste a pagar? <a href="#" id="revisarmp" style="color:var(--pri-t);font-weight:600">Revisar mi pago</a></div>`}`}</div>` : ""}
   <div class="card" style="margin-top:12px"><div style="font-weight:600;font-size:16px;margin-bottom:6px">Resumen de tu pedido</div>
     ${ped.lineas.map((l) => /^caja de navidad/i.test(l.nombre) && st.cajas.length
       ? st.cajas.filter((k) => k.cajaId === l.producto_id).map((k) => `<div class="fila sm"><span>🎁 Caja de ${k.tam} (${sabTxt(k)})</span><span>${peso(l.precio)}</span></div>`).join("")
@@ -626,7 +629,7 @@ function dibujarPaso3(ped, pago) {
     ${ped.fecha_entrega ? `<div class="fila sm"><span>📅 Entrega</span><span><b>${fechaLarga(ped.fecha_entrega)}</b></span></div>` : ""}
     ${desp ? `<div class="fila sm"><span>🚗 Envío a ${esc(comuna)}</span><span>${coordinar ? "por coordinar" : envio ? peso(envio) : "sin costo"}</span></div>` : ""}
     <hr><div class="fila"><span style="font-weight:600;font-size:16px">Total a pagar</span><span style="font-weight:700;font-size:20px">${peso(ped.total)}</span></div></div>
-  ${c.mp ? `<div class="card" style="margin-top:12px"><h2 class="tit">Medio de pago</h2>
+  ${c.mp && !st.avisoMp ? `<div class="card" style="margin-top:12px"><h2 class="tit">Medio de pago</h2>
     <label class="opc ${elegido === "mp" ? "sel" : ""}" id="m_mp"><input type="radio" name="medio" value="mp" ${elegido === "mp" ? "checked" : ""}>
       <div style="flex:1"><div class="fila"><b style="font-weight:600">Mercado Pago</b>${LOGO_MP("height:22px")}</div>
         <div class="mut sm">Tarjeta de débito, crédito o saldo Mercado Pago. Se confirma al instante.</div></div></label>
@@ -689,7 +692,8 @@ function dibujarPaso3(ped, pago) {
       $("#yawa").onclick = () => pantallaFinal(ped, "wa"); }, 800);
   });
   const bm = $("#pagomp"); if (bm) { bm.dataset.html = bm.innerHTML; bm.onclick = () => irAPagarMp(st.ref, bm); }
-  const rm = $("#revisarmp"); if (rm) rm.onclick = () => volvioDeMp(st.ref);
+  const rm = $("#revisarmp"); if (rm) rm.onclick = (e) => { e.preventDefault(); volvioDeMp(st.ref); };
+  const om = $("#otravezmp"); if (om) om.onclick = (e) => { e.preventDefault(); om.textContent = "Abriendo Mercado Pago…"; irAPagarMp(st.ref, null); };
   const cb = $("#cambiar"); if (cb) cb.onclick = () => preguntar("¿Cambiar tu pedido?", "Anulamos este pedido y vuelves a «Envío» con todo cargado para corregir lo que quieras.",
     [["Sí, cambiar mi pedido", "g", cambiarPedido], ["No, seguir con el pago", "sec", () => {}]]);
   const b = $("#cptodo"); if (b) b.onclick = () => copiar(filas.map((f) => f[1]).join("\n"), "Datos copiados ✅ Pégalos en tu app del banco");
