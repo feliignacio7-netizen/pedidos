@@ -141,7 +141,7 @@ function preguntar(titulo, texto, botones, alCerrar) {
   f.querySelectorAll("button[data-i]").forEach((b) => b.onclick = () => { cerrar(); botones[Number(b.dataset.i)][2](); });
 }
 // El carrito y los datos se guardan en la pestaña: si el cliente recarga o vuelve atrás, no pierde nada.
-const CAMPOS_SESION = ["paso", "ref", "cant", "cajas", "codigo", "vista", "entrega", "comuna", "otra", "modoOtra", "direccion", "depto", "fecha", "programar", "fechaProg", "nombre", "tel", "correo", "medio"];
+const CAMPOS_SESION = ["paso", "ref", "editando", "cant", "cajas", "codigo", "vista", "entrega", "comuna", "otra", "modoOtra", "direccion", "depto", "fecha", "programar", "fechaProg", "nombre", "tel", "correo", "medio"];
 function guardarSesion() {
   if (!st.cat || st.paso >= NOMBRES.length) return;
   if (st.paso === 2) leerCampos();
@@ -539,14 +539,13 @@ function cargarDesdePedido(ped) {
   if (st.cajas.length) st.fecha = ped.fecha_entrega || ""; else if (ped.fecha_entrega) { st.programar = true; st.fechaProg = ped.fecha_entrega; }
 }
 // Anula el pedido sin pagar y vuelve a "Envío" con todo cargado, para corregir lo que sea.
+// Vuelve a editar el MISMO pedido (mismo número): al tocar "Ir a pagar" se actualiza, no se crea otro.
 function cambiarPedido() {
-  const viejo = st.ref;
   if (totales()[1] <= 0 && st.ped) cargarDesdePedido(st.ped);
-  st.ref = nuevoRef();
-  api({ accion: "anular", ref: viejo }).catch(() => {});
-  guardarPendiente(""); st.medio = ""; st.comp = null; st.totalEsperado = 0; st.desdeCorreo = false; st.avisoMp = ""; st.ofertaVista = false;
+  st.editando = true;
+  st.medio = ""; st.comp = null; st.totalEsperado = 0; st.desdeCorreo = false; st.avisoMp = ""; st.ofertaVista = false;
   history.replaceState({ paso: 2 }, "", location.pathname); st.paso = 2; window.scrollTo(0, 0); dibujarPaso2(); barra();
-  avisar("Corrige lo que quieras y vuelve a «Ir a pagar».");
+  avisar("Corrige lo que quieras y toca «Ir a pagar»: se actualiza el mismo pedido.");
 }
 
 function dibujarPaso3(ped, pago) {
@@ -746,7 +745,7 @@ window.addEventListener("popstate", (e) => {
     if (destino >= 3) return;
     history.pushState({ paso: 3 }, "");   // se queda en el pago hasta que el cliente decida
     if (st.avisoMp === "pending" || st.avisoMp === "in_process") { avisar("Tu pago está en proceso: espera la confirmación antes de cambiar el pedido."); return; }
-    preguntar("¿Quieres cambiar tu pedido?", `Tu pedido${st.ped && st.ped.codigo ? " #" + esc(st.ped.codigo) : ""} todavía no está pagado. Si lo cambias, lo anulamos y vuelves a editarlo.`,
+    preguntar("¿Quieres cambiar tu pedido?", `Tu pedido${st.ped && st.ped.codigo ? " #" + esc(st.ped.codigo) : ""} todavía no está pagado. Puedes volver a Envío, corregir lo que quieras y se actualiza el mismo pedido.`,
       [["Sí, cambiar mi pedido", "g", cambiarPedido], ["No, seguir con el pago", "sec", () => {}]]);
     return;
   }
@@ -842,12 +841,13 @@ async function enviar() {
   st.enviando = true; barra();
   try {
     const r = await fetch(window.API_URL, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" },
-      body: JSON.stringify({ accion: "pedido", ref: st.ref, nombre: st.nombre, telefono: tel, correo: (st.correo || "").trim(), nota: st.cajas.length ? "#C " + st.cajas.map((k) => `${k.cajaId}=${negroId()}:${k.neg},${blancoId()}:${k.bla}`).join(";") : "", cantidades: st.cant,
+      body: JSON.stringify({ accion: "pedido", ref: st.ref, editar: !!st.editando, nombre: st.nombre, telefono: tel, correo: (st.correo || "").trim(), nota: st.cajas.length ? "#C " + st.cajas.map((k) => `${k.cajaId}=${negroId()}:${k.neg},${blancoId()}:${k.bla}`).join(";") : "", cantidades: st.cant,
         esperado: (st.totalEsperado = totales()[0] + (envioActual() || 0)),
         fecha_entrega: agendaActiva() ? st.fecha : (st.programar && !esOtra() ? st.fechaProg : ""), codigo: st.codigo || "",
         entrega: despachoActivo() ? st.entrega : "retiro", comuna: comunaElegida(), otra_comuna: esOtra(), direccion: st.entrega !== "despacho" ? "" : [st.direccion || "", (st.depto || "").trim()].filter(Boolean).join(", "), trampa: ($("#trampa") || {}).value || "" }) });
     const d = await r.json();
     st.enviando = false;
+    if (!d.ok && d.nuevo && st.editando) { st.editando = false; st.ref = nuevoRef(); barra(); return enviar(); }   // el anterior ya no estaba activo: va como pedido nuevo
     if (!d.ok) {
       avisar(d.error || "No pudimos guardar tu pedido. Intenta de nuevo."); barra();
       if (st.codigo && /código/i.test(d.error || "")) {   // el código dejó de valer: se ofrece seguir sin él
@@ -860,6 +860,8 @@ async function enviar() {
       return;
     }
     try { localStorage.setItem("av_cliente", JSON.stringify({ nombre: st.nombre, tel: st.tel, correo: st.correo, comuna: st.comuna, otra: st.otra, direccion: st.direccion, depto: st.depto })); } catch (e) {}   // la próxima vez se rellena solo
+    if (st.editando) avisar("✓ Pedido actualizado");
+    st.editando = false;
     history.pushState({ paso: 3 }, "");
     st.paso = 3; st.avisoMp = ""; window.scrollTo(0, 0); barra(); dibujarPaso3(d.pedido, d.pago || {});
   } catch (e) {

@@ -108,8 +108,14 @@ function crearPedido(d) {
     const h = hoja();
     const filas = h.getDataRange().getValues();
     const idx = {}; COLUMNAS.forEach((k, i) => idx[k] = i);
+    let editar = 0;   // fila del pedido que el cliente volvió a editar (se actualiza en vez de crear otro)
     for (let i = 1; i < filas.length; i++) {   // mismo envío repetido (doble toque): devuelve el mismo pedido
       if (String(filas[i][idx.ref]) === ref) {
+        if (d.editar === true) {
+          if (String(filas[i][idx.mp_pago] || "") || tieneComprobante(ref)) return json({ ok: false, error: "Este pedido ya está pagado. Si necesitas cambiar algo, escríbenos por WhatsApp." });
+          if (String(filas[i][idx.anulado] || "")) return json({ ok: false, nuevo: true, error: "Este pedido ya no está activo." });
+          editar = i + 1; break;
+        }
         return json({ ok: true, pedido: { ref: ref, nombre: filas[i][idx.nombre], lineas: JSON.parse(filas[i][idx.lineas]), total: filas[i][idx.total],
                                           entrega: filas[i][idx.entrega] || "retiro", comuna: filas[i][idx.comuna] || "", direccion: filas[i][idx.direccion] || "",
                                           envio: Number(filas[i][idx.envio] || 0), fecha_entrega: String(filas[i][idx.fecha_entrega] || ""), codigo: codigoCorto(String(filas[i][0])) }, pago: c.pago || {} });
@@ -148,7 +154,7 @@ function crearPedido(d) {
     } else if (c.agenda && c.agenda.desde && (conCajas || enCampana)) {   // Cajas de Navidad, o granel en días de campaña: días con cupo
       fechaEntrega = String(d.fecha_entrega || "").substring(0, 10);
       if (!fechaEntrega) return json({ ok: false, error: "Elige el día de entrega." });
-      const dia = diasDisponibles(c, filas).filter(x => x.fecha === fechaEntrega)[0];
+      const dia = diasDisponibles(c, filas, editar ? ref : "").filter(x => x.fecha === fechaEntrega)[0];
       if (!dia) return json({ ok: false, error: "Ese día de entrega ya no está disponible. Elige otro, por favor." });
       if (dia.libre < unidades) return json({ ok: false, error: "Para ese día ya no alcanzamos con tantos alfajores. Elige otro día o escríbenos por WhatsApp." });
     }
@@ -164,8 +170,12 @@ function crearPedido(d) {
     if (otraComuna && despacho && total < minOtras) return json({ ok: false, error: "Para envío a otras comunas el pedido mínimo es " + pesos(minOtras) + ". También puedes elegir retiro gratis." });
     const envio = !despacho ? 0 : otraComuna ? costoOtras : amigo ? 0 : calcularEnvio(c, total, entrega, comuna);   // código: gratis en la zona; otras comunas: tarifa fija
     const creado = Utilities.formatDate(new Date(), "America/Santiago", "yyyy-MM-dd HH:mm");
-    h.appendRow([ref, "'" + creado, nombre, "'" + tel, notaFinal, JSON.stringify(lineas), total + envio, "", entrega, comuna, direccion, envio, correo, "", "", "", fechaEntrega ? "'" + fechaEntrega : "", ""]);
-    enviarCorreo(h, 0, "recibido");   // 0 = la fila recién agregada
+    if (editar) {   // mismo pedido, mismo número: se reemplazan los datos y el ERP lo vuelve a leer para actualizarlo
+      h.getRange(editar, 3, 1, 15).setValues([[nombre, "'" + tel, notaFinal, JSON.stringify(lineas), total + envio, "", entrega, comuna, direccion, envio, correo, "", "", "", fechaEntrega ? "'" + fechaEntrega : ""]]);
+    } else {
+      h.appendRow([ref, "'" + creado, nombre, "'" + tel, notaFinal, JSON.stringify(lineas), total + envio, "", entrega, comuna, direccion, envio, correo, "", "", "", fechaEntrega ? "'" + fechaEntrega : "", ""]);
+      enviarCorreo(h, 0, "recibido");   // 0 = la fila recién agregada
+    }
     cache.put(clave, String(n + 1), 3600);
     return json({ ok: true, pedido: { ref: ref, nombre: nombre, lineas: lineas, total: total + envio, creado: creado,
                                       entrega: entrega, comuna: comuna, direccion: direccion, envio: envio, fecha_entrega: fechaEntrega, codigo: codigoCorto(ref) }, pago: c.pago || {} });
@@ -538,7 +548,7 @@ function unidadesDe(lineas, catalogo) {
 
 // Días que todavía se pueden elegir, con lo que queda libre (tope interno; la página no lo muestra).
 // Ocupado = lo que el ERP informa (pedidos vigentes) + pedidos de la hoja que el ERP aún no conoce.
-function diasDisponibles(c, filas) {
+function diasDisponibles(c, filas, excluirRef) {   // excluirRef: pedido que se está editando (no se cuenta contra su propio cupo)
   const a = c.agenda || {};
   if (!a.desde || !a.hasta) return [];
   const cupo = Number(a.cupo) || 0, antes = Number(a.dias_antes) || 0, hora = ("0" + (Number(a.hora) || 0)).slice(-2) + ":00";
@@ -549,8 +559,10 @@ function diasDisponibles(c, filas) {
   const I = {}; COLUMNAS.forEach((k, i) => I[k] = i);
   for (let i = 1; i < filas.length; i++) {
     const f = String(filas[i][I.fecha_entrega] || "").replace(/^'/, "").substring(0, 10);
-    if (!f || conocidos[String(filas[i][0])] || String(filas[i][I.anulado] || "")) continue;
+    if (!f || String(filas[i][I.anulado] || "")) continue;
     let ls = []; try { ls = JSON.parse(filas[i][I.lineas]); } catch (e) {}
+    if (excluirRef && String(filas[i][0]) === excluirRef) { if (conocidos[excluirRef]) ocupado[f] = (ocupado[f] || 0) - unidadesDe(ls, catalogo); continue; }
+    if (conocidos[String(filas[i][0])]) continue;
     ocupado[f] = (ocupado[f] || 0) + unidadesDe(ls, catalogo);
   }
   const ahora = Utilities.formatDate(new Date(), "America/Santiago", "yyyy-MM-dd HH:mm");
