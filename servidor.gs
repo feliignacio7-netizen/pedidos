@@ -167,6 +167,8 @@ function crearPedido(d) {
     else if (despacho && (R.comunas || []).indexOf(comuna) < 0) return json({ ok: false, error: "Por ahora repartimos en " + (R.comunas || []).join(", ") + ". Si estás en otra comuna, elige «Otra comuna»." });
     if (despacho && (!comuna || direccion.length < 5)) return json({ ok: false, error: "Escribe tu comuna y dirección para el despacho." });
     const minOtras = Number(R.minimo_otras == null ? 15000 : R.minimo_otras), costoOtras = Number(R.costo_otras == null ? 5000 : R.costo_otras);
+    const minPedido = Number(R.minimo_pedido == null ? 5000 : R.minimo_pedido);
+    if (!otraComuna && despacho && total < minPedido) return json({ ok: false, error: "El pedido mínimo para envío a domicilio es " + pesos(minPedido) + "." });
     if (otraComuna && despacho && total < minOtras) return json({ ok: false, error: "Para envío a otras comunas el pedido mínimo es " + pesos(minOtras) + ". También puedes elegir retiro gratis." });
     const envio = !despacho ? 0 : otraComuna ? costoOtras : amigo ? 0 : calcularEnvio(c, total, entrega, comuna);   // código: gratis en la zona; otras comunas: tarifa fija
     const creado = Utilities.formatDate(new Date(), "America/Santiago", "yyyy-MM-dd HH:mm");

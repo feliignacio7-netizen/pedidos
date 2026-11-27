@@ -184,6 +184,7 @@ function lugarPedido(ped) {
 }
 const costoOtras = () => Number(((st.cat || {}).despacho || {}).costo_otras ?? 5000);
 const minimoOtras = () => Number(((st.cat || {}).despacho || {}).minimo_otras ?? 15000);
+const minimoPedido = () => Number(((st.cat || {}).despacho || {}).minimo_pedido ?? 5000);   // mínimo para envío en tus comunas
 // Cómo se entrega: en la zona, a domicilio; en otra comuna, retiro gratis en Las Condes o envío con mínimo (con código: punto a coordinar).
 function modoEntrega() { if (!despachoActivo()) return "retiro"; if (!esOtra()) return "despacho"; return st.codigo ? "retiro" : (st.modoOtra || ""); }
 function envioActual() {   // misma regla que el servidor
@@ -416,6 +417,7 @@ function dibujarPaso2() {
           const falta = minimoOtras() - sub;
           m.innerHTML = !st.codigo && st.modoOtra === "despacho" && falta > 0 ? `<div class="sm">Te faltan <b>${peso(falta)}</b> para el pedido mínimo de envío a otras comunas. <a href="#" id="sumar" style="color:var(--pri-t);font-weight:600">+ Agregar alfajores</a> o elige retiro gratis.</div>` : "";
         }
+        else if (st.comuna && sub < minimoPedido()) m.innerHTML = `<div class="sm">El pedido mínimo para envío es <b>${peso(minimoPedido())}</b>: te faltan <b>${peso(minimoPedido() - sub)}</b>. <a href="#" id="sumar" style="color:var(--pri-t);font-weight:600">+ Agregar alfajores</a></div>`;
         else if (st.codigo) m.innerHTML = `<div class="sm" style="color:var(--ok);font-weight:600">🎉 Con tu código, el envío es gratis</div>`;
         else if (!st.comuna) m.innerHTML = "";
         else if (!min || !Number(r.costo || 0)) m.innerHTML = "";
@@ -710,10 +712,13 @@ function barra() {
   const f1 = $("#falta1");
   if (f1 && st.paso === 1) {
     const r = st.cat.despacho || {}, min = Number(r.minimo || 0), falta = Math.max(0, min - t);
-    f1.hidden = !(despachoActivo() && min > 0 && Number(r.costo || 0) > 0);
-    f1.innerHTML = st.codigo ? `🎉 Con tu código tienes <b>envío gratis</b> a tu domicilio` : t <= 0 ? `🚗 Envío gratis a tu domicilio en ${esc(listaComunas(r.comunas))} desde <b>${peso(min)}</b>`
+    f1.hidden = !(despachoActivo() && ((min > 0 && Number(r.costo || 0) > 0) || minimoPedido() > 0));
+    const bajoMin = t > 0 && t < minimoPedido();
+    f1.innerHTML = bajoMin ? `🚗 Pedido mínimo para envío a domicilio: <b>${peso(minimoPedido())}</b>. Te faltan <b>${peso(minimoPedido() - t)}</b>.`
+      : st.codigo ? `🎉 Con tu código tienes <b>envío gratis</b> a tu domicilio` : t <= 0 ? `🚗 Envío gratis a tu domicilio en ${esc(listaComunas(r.comunas))} desde <b>${peso(min)}</b>`
       : falta > 0 ? `🚗 Te faltan <b>${peso(falta)}</b> para envío gratis a tu domicilio` : `🎉 ¡Tienes <b>envío gratis</b> a tu domicilio en ${esc(listaComunas(r.comunas))}!`;
-    if (!st.codigo) f1.innerHTML += `<div class="prog"><i style="width:${Math.min(100, Math.round(t * 100 / (min || 1)))}%"></i></div>`;
+    if (bajoMin) f1.innerHTML += `<div class="prog"><i style="width:${Math.min(100, Math.round(t * 100 / minimoPedido()))}%"></i></div>`;
+    else if (!st.codigo) f1.innerHTML += `<div class="prog"><i style="width:${Math.min(100, Math.round(t * 100 / (min || 1)))}%"></i></div>`;
   }
   $("#atras").hidden = (st.paso !== 2 && st.paso !== 3) || (st.paso === 3 && (st.avisoMp === "pending" || st.avisoMp === "in_process"));
   $("#atras").textContent = st.paso === 3 ? "← Envío" : "← Carrito";
@@ -801,6 +806,13 @@ function ofrecerEnvioGratis() {
     salidas: [["🛒 Ir al carrito para elegir", "out", () => irA(1), "ofcarro"],
               [`No, gracias. Pagar con envío (${peso(costo)})`, "sec", () => enviar(), "ofno"]] });
 }
+// Tus comunas, bajo el pedido mínimo: agregar ahí mismo o ir al carrito.
+function ofrecerMinimoZona() {
+  st.ofertaVista = true;   // ya se le ofreció agregar: no se le encadena otra ventana de envío gratis
+  const falta = minimoPedido() - totales()[0];
+  ofrecerAgregar({ icono: "🛍️", titulo: `Te faltan ${peso(falta)} para el pedido mínimo`, texto: `El envío a domicilio es para pedidos desde ${peso(minimoPedido())}. Agrega {n} y seguimos.`,
+    falta, listo: "¡Listo! Ya llegas al mínimo 🎉", salidas: [["🛒 Ir al carrito para elegir", "out", () => irA(1), "minCarro"]] });
+}
 // Otra comuna con envío bajo el mínimo: agregar alfajores ahí mismo, ir al carrito o cambiar a retiro gratis.
 function ofrecerMinimoOtras() {
   const falta = minimoOtras() - totales()[0];
@@ -836,6 +848,7 @@ async function enviar() {
     if (esOtra() && !st.entrega) { avisar("Elige retiro gratis en Las Condes o envío a domicilio."); return; }
     if (esOtra() && st.entrega === "despacho" && totales()[0] < minimoOtras()) { if (negroId() || blancoId()) ofrecerMinimoOtras(); else avisar(`Para envío a otras comunas el pedido mínimo es ${peso(minimoOtras())}.`); return; }
     if (st.entrega === "despacho" && (st.direccion || "").trim().length < 5) { avisar("Escribe tu dirección para el despacho."); const d = $("#dir"); if (d) d.focus(); return; }
+    if (!esOtra() && totales()[0] < minimoPedido()) { if (negroId() || blancoId()) ofrecerMinimoZona(); else avisar(`El pedido mínimo para envío es ${peso(minimoPedido())}.`); return; }
     if (!st.ofertaVista && !esOtra() && envioActual() > 0 && negroId()) { ofrecerEnvioGratis(); return; }   // le falta poco para el envío gratis: se le ofrece una vez
   }
   st.enviando = true; barra();
