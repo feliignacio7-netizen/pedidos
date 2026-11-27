@@ -168,7 +168,7 @@ function crearPedido(d) {
     const minPedido = Number(R.minimo_pedido == null ? 5000 : R.minimo_pedido);
     if (!otraComuna && despacho && total < minPedido) return json({ ok: false, error: "El pedido mínimo para envío a domicilio es " + pesos(minPedido) + "." });
     if (otraComuna && despacho && total < minOtras) return json({ ok: false, error: "Para envío a otras comunas el pedido mínimo es " + pesos(minOtras) + ". También puedes elegir retiro gratis." });
-    const gratisOtras = Number(R.gratis_otras == null ? 35000 : R.gratis_otras);
+    const gratisOtras = Number(R.gratis_otras == null ? 25000 : R.gratis_otras);
     const envio = !despacho ? 0 : otraComuna ? (gratisOtras && total >= gratisOtras ? 0 : costoOtras) : amigo ? 0 : calcularEnvio(c, total, entrega, comuna);   // código: gratis en la zona; otras comunas: tarifa fija
     const creado = Utilities.formatDate(new Date(), "America/Santiago", "yyyy-MM-dd HH:mm");
     if (editar) {   // mismo pedido, mismo número: se reemplazan los datos y el ERP lo vuelve a leer para actualizarlo

@@ -184,7 +184,7 @@ function lugarPedido(ped) {
 }
 const costoOtras = () => Number(((st.cat || {}).despacho || {}).costo_otras ?? 5000);
 const minimoOtras = () => Number(((st.cat || {}).despacho || {}).minimo_otras ?? 15000);
-const gratisOtras = () => Number(((st.cat || {}).despacho || {}).gratis_otras ?? 35000);   // otras comunas: envío gratis desde
+const gratisOtras = () => Number(((st.cat || {}).despacho || {}).gratis_otras ?? 25000);   // otras comunas: envío gratis desde
 const minimoPedido = () => Number(((st.cat || {}).despacho || {}).minimo_pedido ?? 5000);   // mínimo para envío en tus comunas
 // Cómo se entrega: en la zona, a domicilio; en otra comuna, retiro gratis en Las Condes o envío con mínimo (con código: punto a coordinar).
 // En tus comunas, un pedido bajo el mínimo puede retirarse gratis en Las Condes.
