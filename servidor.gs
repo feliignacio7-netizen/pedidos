@@ -140,9 +140,7 @@ function crearPedido(d) {
     const R = c.despacho || {}, otraComuna = !!R.activo && d.otra_comuna === true;
     let entrega = R.activo ? (d.entrega === "despacho" ? "despacho" : "retiro") : "retiro";
     if (otraComuna && amigo) entrega = "retiro";
-    if (R.activo && !otraComuna && entrega !== "despacho") return json({ ok: false, error: "Elige tu comuna y escribe tu dirección para el despacho." });
-    const retiro = entrega === "retiro";
-    if (retiro && sueltos === unidades && sueltos < MINIMO_GRANEL) return json({ ok: false, error: "Para retiro, el mínimo es de " + MINIMO_GRANEL + " alfajores." });
+    // Retiro gratis en Las Condes: para otras comunas, o en tus comunas cuando el pedido no llega al mínimo de envío. Sin mínimo.
     let fechaEntrega = "";
     const conCajas = lineas.some(l => (catalogo[l.producto_id] || {}).navidad);
     const pedida = String(d.fecha_entrega || "").substring(0, 10);
@@ -161,10 +159,10 @@ function crearPedido(d) {
     const notaFinal = (amigo ? (nota ? nota + " · " : "") + "Con código" : nota).substring(0, 300);
     if (unidades > 200) return json({ ok: false, error: "Para pedidos tan grandes, escríbenos por WhatsApp." });
     const despacho = entrega === "despacho";
-    let comuna = (despacho || otraComuna) ? String(d.comuna || "").replace(/\s+/g, " ").replace(/\(otra comuna\)/gi, "").trim().substring(0, 40) : "";
+    let comuna = R.activo ? String(d.comuna || "").replace(/\s+/g, " ").replace(/\(otra comuna\)/gi, "").trim().substring(0, 40) : "";
     const direccion = despacho ? String(d.direccion || "").replace(/\s+/g, " ").trim().substring(0, 120) : "";
     if (otraComuna) { if (comuna.length < 3) return json({ ok: false, error: "Escribe en qué comuna estás." }); comuna += " (otra comuna)"; }
-    else if (despacho && (R.comunas || []).indexOf(comuna) < 0) return json({ ok: false, error: "Por ahora repartimos en " + (R.comunas || []).join(", ") + ". Si estás en otra comuna, elige «Otra comuna»." });
+    else if (R.activo && (R.comunas || []).indexOf(comuna) < 0) return json({ ok: false, error: "Por ahora repartimos en " + (R.comunas || []).join(", ") + ". Si estás en otra comuna, elige «Otra comuna»." });
     if (despacho && (!comuna || direccion.length < 5)) return json({ ok: false, error: "Escribe tu comuna y dirección para el despacho." });
     const minOtras = Number(R.minimo_otras == null ? 15000 : R.minimo_otras), costoOtras = Number(R.costo_otras == null ? 5000 : R.costo_otras);
     const minPedido = Number(R.minimo_pedido == null ? 5000 : R.minimo_pedido);
@@ -608,7 +606,7 @@ function cuerpoCorreo(f, I, tipo) {
   const dia = fechaBonita(f[I.fecha_entrega]);
   const otraC = /\(otra comuna\)/i.test(String(f[I.comuna]));
   const conCod = /Con código/.test(String(f[I.nota] || ""));
-  const entrega = !desp ? (otraC ? (conCod ? "📍 Entrega en un punto a coordinar entre ambos (por WhatsApp)" : "📍 Retiro gratis en un punto a coordinar en Las Condes (por WhatsApp)") : "📦 Entrega por coordinar")
+  const entrega = !desp ? (otraC && conCod ? "📍 Entrega en un punto a coordinar entre ambos (por WhatsApp)" : "📍 Retiro gratis en un punto a coordinar en Las Condes (por WhatsApp)")
     : `🚗 Despacho a ${escH(f[I.direccion])}, ${escH(String(f[I.comuna]).replace(/\s*\(otra comuna\)/i, ""))}`;
   if (tipo === "recordatorio" && (String(f[I.mp_pago] || "") || String(f[I.anulado] || "") || tieneComprobante(ref))) return "";
   const pagar = (tipo === "recibido" || tipo === "recordatorio") && !String(f[I.mp_pago] || "") ? `<p style="text-align:center;margin:24px 0"><a href="${PAGINA}/?pagar=${encodeURIComponent(ref)}" style="background:#BC7B69;color:#2A1A12;text-decoration:none;padding:12px 22px;border-radius:999px;font-weight:600">Pagar mi pedido</a></p>` : "";
