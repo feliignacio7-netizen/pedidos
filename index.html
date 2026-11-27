@@ -799,7 +799,8 @@ function ofrecerEnvioGratis() {
   const r = st.cat.despacho, costo = Number(r.costo || 0);
   ofrecerAgregar({ icono: "🚗", titulo: "¡Unos alfajores más y tienes envío gratis!", texto: `Con {n} más te ahorras los <b>${peso(costo)}</b> del envío.`,
     falta: Number(r.minimo || 0) - totales()[0], listo: "¡Listo! Tu envío ahora es gratis 🎉", alCerrar: () => { st.ofertaVista = false; },
-    salidas: [[`No, gracias. Pagar con envío (${peso(costo)})`, "sec", () => enviar(), "ofno"]] });
+    salidas: [["🛒 Ir al carrito para elegir", "out", () => irA(1), "ofcarro"],
+              [`No, gracias. Pagar con envío (${peso(costo)})`, "sec", () => enviar(), "ofno"]] });
 }
 // Otra comuna con envío bajo el mínimo: agregar alfajores ahí mismo, ir al carrito o cambiar a retiro gratis.
 function ofrecerMinimoOtras() {
