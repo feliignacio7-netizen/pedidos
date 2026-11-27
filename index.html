@@ -115,6 +115,11 @@ const BANDERA = '<svg viewBox="0 0 90 60"><rect width="90" height="60" fill="#ff
 const NOMBRES = ["Carrito", "Envío", "Pago", "Listo"];
 const st = { paso: 1, cat: null, cant: {}, cajas: [], arma: null, medio: "", fecha: "", codigo: "", vista: "", programar: false, fechaProg: "", entrega: "despacho", comuna: "", otra: "", direccion: "", ref: (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random().toString(36).slice(2)), enviando: false };
 
+// Ninguna consulta queda colgada para siempre (si no, el botón se quedaría en "Enviando…"): el mapa espera 7 s, el resto 40 s.
+(() => { const f0 = window.fetch.bind(window);
+  window.fetch = (u, o) => { o = o || {}; if (o.signal || !window.AbortController) return f0(u, o);
+    const c = new AbortController(), t = setTimeout(() => c.abort(), String(u).includes("nominatim") ? 7000 : 40000);
+    return f0(u, Object.assign({}, o, { signal: c.signal })).finally(() => clearTimeout(t)); }; })();
 const nuevoRef = () => crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random().toString(36).slice(2);
 async function api(datos) {
   const r = await fetch(window.API_URL, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify(datos) });
@@ -144,7 +149,7 @@ function guardarSesion() {
 function borrarSesion() { try { sessionStorage.removeItem("av_sesion"); } catch (e) {} }
 function leerSesion() { try { return JSON.parse(sessionStorage.getItem("av_sesion") || "null"); } catch (e) { return null; } }
 
-function avisar(t) { const a = $("#aviso"); a.textContent = t; a.style.display = "block"; clearTimeout(avisar.t); avisar.t = setTimeout(() => a.style.display = "none", 3200); }
+function avisar(t) { const a = $("#aviso"); a.textContent = t; a.style.display = "block"; clearTimeout(avisar.t); avisar.t = setTimeout(() => a.style.display = "none", Math.min(7000, 2500 + String(t).length * 45)); }
 function sabor(n) { return String(n).trim().toLowerCase().replace(/^alfajor(es)?\s+(de\s+)?/, ""); }
 function frase(ls) {
   const cj = ls.filter((l) => /^caja de navidad/i.test(l.nombre)); ls = ls.filter((l) => !/^caja de navidad/i.test(l.nombre));
@@ -416,6 +421,7 @@ function dibujarPaso2() {
   const r = st.cat.despacho || {}, act = despachoActivo();
   setTimeout(() => { const v = $("#volver1"); if (v) v.onclick = () => irA(1); }, 0);
   st.entrega = act ? "despacho" : "retiro";   // solo entrega a domicilio (ya no hay retiro en el metro)
+  if (st.comuna && (r.comunas || []).indexOf(st.comuna) < 0) st.comuna = "";   // comuna guardada de antes que ya no se reparte
   $("#cuerpo").innerHTML = indicador() + `
   <div class="volver" style="margin:0 0 10px"><button class="btn sec" id="volver1">← Volver al Carrito</button></div>
   <div class="card"><h2 class="tit">Contacto</h2>
@@ -580,7 +586,7 @@ function cambiarPedido() {
   st.ref = nuevoRef();
   api({ accion: "anular", ref: viejo }).catch(() => {});
   guardarPendiente(""); st.medio = ""; st.comp = null; st.totalEsperado = 0; st.desdeCorreo = false; st.avisoMp = ""; st.ofertaVista = false;
-  history.replaceState({ paso: 2 }, ""); st.paso = 2; window.scrollTo(0, 0); dibujarPaso2(); barra();
+  history.replaceState({ paso: 2 }, "", location.pathname); st.paso = 2; window.scrollTo(0, 0); dibujarPaso2(); barra();
   avisar("Corrige lo que quieras y vuelve a «Ir a pagar».");
 }
 
@@ -620,7 +626,7 @@ function dibujarPaso3(ped, pago) {
   $("#cuerpo").innerHTML = indicador() + `
   ${st.totalEsperado && Math.round(st.totalEsperado) !== Math.round(ped.total) ? `<div class="card sm" style="border-color:var(--pri);background:#F6EDE6">Los precios se actualizaron mientras armabas tu pedido. El total final es <b>${peso(ped.total)}</b>.</div>` : ""}
   <div class="card" style="${st.totalEsperado && Math.round(st.totalEsperado) !== Math.round(ped.total) ? "margin-top:12px" : ""}"><h2 class="tit">Pago${ped.codigo ? ` <span class="mut" style="font-size:15px;font-weight:400">· pedido #${esc(ped.codigo)}</span>` : ""}</h2><div class="mut sm">¡Gracias! Tu pedido${ped.codigo ? ` <b>#${esc(ped.codigo)}</b>` : ""} quedó anotado${ped.codigo ? " y te enviamos un correo con el resumen" : ""}. ${enProceso ? "" : fallo ? "Te dejamos los datos para pagar por transferencia:" : c.mp ? "Elige cómo quieres pagar:" : "Solo faltan 3 cosas:"}</div>
-    <div class="volver"><button class="btn sec" id="cambiar">← Volver a Envío</button><button class="btn sec" id="vercarro">← Volver al Carrito</button></div></div>
+    ${enProceso ? "" : `<div class="volver"><button class="btn sec" id="cambiar">← Volver a Envío</button><button class="btn sec" id="vercarro">← Volver al Carrito</button></div>`}</div>
   ${st.avisoMp ? `<div class="card sm" style="margin-top:12px;border-color:${st.avisoMp === "pending" || st.avisoMp === "in_process" ? "var(--bor2)" : "var(--pri)"};background:#F6EDE6">${
     st.avisoMp === "pending" || st.avisoMp === "in_process"
       ? `<b>⏳ Mercado Pago está procesando tu pago.</b><div style="margin-top:4px">Apenas se apruebe te llega un correo. <b>No vuelvas a pagar</b> para no cobrarte dos veces.</div><button class="btn out" id="revisarmp" style="margin-top:8px">Volver a revisar mi pago</button>`
@@ -720,11 +726,14 @@ function dibujarCarrito() {
   el.hidden = false;
   const precioCaja = (id) => (cajasCat().find((p) => p.id === id) || {}).precio || 0;
   el.innerHTML = `<div class="fila" style="margin-bottom:4px"><h2 class="tit" style="margin:0">🛒 Tu pedido</h2><b>${peso(totales()[0])}</b></div>` +
+    `<div style="text-align:right;margin:-4px 0 4px"><a href="#" id="vaciar" class="xs" style="color:var(--mut)">Vaciar pedido</a></div>` +
     st.cajas.map((k, i) => `<div class="cl"><div style="min-width:0"><div style="font-weight:500">🎁 Caja de ${k.tam}</div><div class="mut sm">${sabTxt(k)} · ${peso(precioCaja(k.cajaId))}</div></div>
       <button class="q" data-qc="${i}">Quitar</button></div>`).join("") +
     sueltos.map((p) => `<div class="cl"><div style="min-width:0"><div style="font-weight:500">${/negro/i.test(p.nombre) ? "⚫ Negros" : /blanco/i.test(p.nombre) ? "⚪ Blancos" : esc(sabor(p.nombre))} a granel</div><div class="mut sm">${st.cant[p.id]} × ${peso(p.precio)} = ${peso(st.cant[p.id] * p.precio)}</div></div>
       <button class="q" data-qg="${p.id}">Quitar</button></div>`).join("");
   el.querySelectorAll("[data-qc]").forEach((b) => b.onclick = () => quitarCaja(Number(b.dataset.qc)));
+  const vz = $("#vaciar"); if (vz) vz.onclick = (e) => { e.preventDefault();
+    preguntar("¿Vaciar tu pedido?", "Se quitan todas las cajas y alfajores.", [["Sí, vaciar", "g", () => { st.cant = {}; st.cajas = []; st.arma = null; st.fecha = ""; dibujarPaso1(); barra(); }], ["No", "sec", () => {}]]); };
   el.querySelectorAll("[data-qg]").forEach((b) => b.onclick = () => {   // las cantidades se cambian con + y − de "Alfajores a granel"; aquí solo se quita
     const id = Number(b.dataset.qg) || b.dataset.qg;
     st.cant[id] = 0; const n = $("#n" + id); if (n) n.textContent = 0;
@@ -748,7 +757,7 @@ function barra() {
       : falta > 0 ? `🚗 Te faltan <b>${peso(falta)}</b> para envío gratis a tu domicilio` : `🎉 ¡Tienes <b>envío gratis</b> a tu domicilio en ${esc(listaComunas(r.comunas))}!`;
     f1.innerHTML += `<div class="prog"><i style="width:${Math.min(100, Math.round(t * 100 / (min || 1)))}%"></i></div>`;
   }
-  $("#atras").hidden = st.paso !== 2 && st.paso !== 3;
+  $("#atras").hidden = (st.paso !== 2 && st.paso !== 3) || (st.paso === 3 && (st.avisoMp === "pending" || st.avisoMp === "in_process"));
   $("#atras").textContent = st.paso === 3 ? "← Envío" : "← Carrito";
   $("#sig").textContent = st.paso === 1 ? "Continuar al envío →" : (st.enviando ? "Enviando…" : "Ir a pagar →");
   $("#sig").disabled = (st.paso === 1 && u <= 0 && !(st.arma && st.arma.neg + st.arma.bla > 0)) || st.enviando;   // con una caja a medio armar también se puede seguir
@@ -761,10 +770,11 @@ function irA(p, desdeHistorial) {
   else if (!history.state) history.replaceState({ paso: p }, "");
   st.paso = p; window.scrollTo(0, 0); (p === 1 ? dibujarPaso1 : dibujarPaso2)(); barra();
 }
+document.addEventListener("keydown", (e) => { if ((e.key === "Enter" || e.key === " ") && e.target.closest && e.target.closest(".ind [data-ir]")) { e.preventDefault(); e.target.click(); } });
 document.addEventListener("click", (e) => {   // tocar "Carrito" o "Envío" en los pasos de arriba
   const x = e.target.closest && e.target.closest(".ind [data-ir]"); if (!x) return;
   const k = Number(x.dataset.ir);
-  if (st.paso === 3) { cambiarPedido(); if (k === 1) irA(1); }
+  if (st.paso === 3) { if (st.avisoMp === "pending" || st.avisoMp === "in_process") { avisar("Tu pago está en proceso: espera la confirmación antes de cambiar el pedido."); return; } cambiarPedido(); if (k === 1) irA(1); }
   else if (st.paso === 2 && k === 1) irA(1);
 });
 // Botón "atrás" del celular o del navegador: se mueve entre pasos en vez de salir de la página.
@@ -776,6 +786,7 @@ window.addEventListener("popstate", (e) => {
   if (st.paso === 3) {
     if (destino >= 3) return;
     history.pushState({ paso: 3 }, "");   // se queda en el pago hasta que el cliente decida
+    if (st.avisoMp === "pending" || st.avisoMp === "in_process") { avisar("Tu pago está en proceso: espera la confirmación antes de cambiar el pedido."); return; }
     preguntar("¿Quieres cambiar tu pedido?", `Tu pedido${st.ped && st.ped.codigo ? " #" + esc(st.ped.codigo) : ""} todavía no está pagado. Si lo cambias, lo anulamos y vuelves a editarlo.`,
       [["Sí, cambiar mi pedido", "g", cambiarPedido], ["No, seguir con el pago", "sec", () => {}]]);
     return;
@@ -968,7 +979,7 @@ function mostrarPedido(ref, d) {
       <div class="mut sm" style="margin-top:6px">Reservamos los pedidos por 2 horas mientras llega el pago. Puedes volver a hacerlo en un toque, con los mismos productos y datos.</div>
       <button class="btn g" id="rearmar" style="margin-top:12px">Volver a hacer este pedido</button>${wa}</div>`;
     $("#rearmar").onclick = () => { st.ped = d.pedido; cargarDesdePedido(d.pedido); st.ref = nuevoRef(); api({ accion: "anular", ref: ref }).catch(() => {});
-      history.replaceState({ paso: 2 }, ""); st.paso = 2; dibujarPaso2(); barra(); };
+      history.replaceState({ paso: 2 }, "", location.pathname); st.paso = 2; dibujarPaso2(); barra(); };
     return;
   }
   st.desdeCorreo = true; st.nombre = st.nombre || d.pedido.nombre; st.paso = 3; barra(); dibujarPaso3(d.pedido, d.pago || {});
