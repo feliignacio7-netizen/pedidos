@@ -42,7 +42,9 @@ input:focus,textarea:focus{border-color:var(--pri);box-shadow:0 0 0 1px var(--pr
 .pref svg{width:30px;height:20px;border-radius:3px;box-shadow:0 0 0 1px rgba(0,0,0,.15)}
 .trampa{position:absolute;left:-9999px;opacity:0;height:0;width:0}
 .barra{position:fixed;z-index:5;left:0;right:0;bottom:0;background:var(--sup);border-top:1px solid var(--bor);padding:10px 14px calc(10px + env(safe-area-inset-bottom,0px))}
-.barra .btn{white-space:nowrap;width:auto;padding:0 16px}.barra #sig{flex:0 1 auto}
+.barra .btn{white-space:nowrap;width:auto;padding:0 14px}.barra #atras{padding:0 6px}.barra .in>div:first-child{flex-shrink:0}@media (max-width:380px){.barra #atras{display:none!important}}#unid{white-space:nowrap}
+.volver{display:flex;flex-wrap:wrap;gap:4px 18px;margin-top:8px}.volver .btn{display:inline-flex!important;width:auto!important;height:auto!important;min-height:32px;margin:0!important;padding:4px 0!important;font-size:14px}
+.ind [data-ir]{cursor:pointer}.ind [data-ir]:hover .n{filter:brightness(1.15)}.barra #sig{flex:0 1 auto}
 .barra .in{max-width:460px;margin:0 auto;display:flex;align-items:center;justify-content:space-between;gap:10px}
 .barra .tot{font-size:20px;font-weight:700;line-height:1.1}
 .btn{height:52px;border-radius:14px;border:0;font:inherit;font-size:16px;font-weight:600;background:var(--pri);color:var(--fg);padding:0 22px;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:8px;text-decoration:none;touch-action:manipulation}
@@ -412,8 +414,10 @@ function resumenPaso2() {   // resumen del pedido como en un carrito: subtotal, 
 }
 function dibujarPaso2() {
   const r = st.cat.despacho || {}, act = despachoActivo();
+  setTimeout(() => { const v = $("#volver1"); if (v) v.onclick = () => irA(1); }, 0);
   st.entrega = act ? "despacho" : "retiro";   // solo entrega a domicilio (ya no hay retiro en el metro)
   $("#cuerpo").innerHTML = indicador() + `
+  <div class="volver" style="margin:0 0 10px"><button class="btn sec" id="volver1">← Volver al Carrito</button></div>
   <div class="card"><h2 class="tit">Contacto</h2>
     <label class="c" for="nombre">Tu nombre</label><input id="nombre" autocomplete="name" value="${esc(st.nombre || "")}">
     <label class="c" for="tel">Tu WhatsApp</label>
@@ -616,7 +620,7 @@ function dibujarPaso3(ped, pago) {
   $("#cuerpo").innerHTML = indicador() + `
   ${st.totalEsperado && Math.round(st.totalEsperado) !== Math.round(ped.total) ? `<div class="card sm" style="border-color:var(--pri);background:#F6EDE6">Los precios se actualizaron mientras armabas tu pedido. El total final es <b>${peso(ped.total)}</b>.</div>` : ""}
   <div class="card" style="${st.totalEsperado && Math.round(st.totalEsperado) !== Math.round(ped.total) ? "margin-top:12px" : ""}"><h2 class="tit">Pago${ped.codigo ? ` <span class="mut" style="font-size:15px;font-weight:400">· pedido #${esc(ped.codigo)}</span>` : ""}</h2><div class="mut sm">¡Gracias! Tu pedido${ped.codigo ? ` <b>#${esc(ped.codigo)}</b>` : ""} quedó anotado${ped.codigo ? " y te enviamos un correo con el resumen" : ""}. ${enProceso ? "" : fallo ? "Te dejamos los datos para pagar por transferencia:" : c.mp ? "Elige cómo quieres pagar:" : "Solo faltan 3 cosas:"}</div>
-    <button class="btn sec" id="cambiar" style="height:40px;margin-top:10px;padding:0 14px;font-size:14px">← Volver a Envío para cambiar algo</button></div>
+    <div class="volver"><button class="btn sec" id="cambiar">← Volver a Envío</button><button class="btn sec" id="vercarro">← Volver al Carrito</button></div></div>
   ${st.avisoMp ? `<div class="card sm" style="margin-top:12px;border-color:${st.avisoMp === "pending" || st.avisoMp === "in_process" ? "var(--bor2)" : "var(--pri)"};background:#F6EDE6">${
     st.avisoMp === "pending" || st.avisoMp === "in_process"
       ? `<b>⏳ Mercado Pago está procesando tu pago.</b><div style="margin-top:4px">Apenas se apruebe te llega un correo. <b>No vuelvas a pagar</b> para no cobrarte dos veces.</div><button class="btn out" id="revisarmp" style="margin-top:8px">Volver a revisar mi pago</button>`
@@ -697,6 +701,7 @@ function dibujarPaso3(ped, pago) {
   const rm = $("#revisarmp"); if (rm) rm.onclick = (e) => { e.preventDefault(); volvioDeMp(st.ref); };
   const om = $("#otravezmp"); if (om) om.onclick = (e) => { e.preventDefault(); om.textContent = "Abriendo Mercado Pago…"; irAPagarMp(st.ref, null); };
   const cb = $("#cambiar"); if (cb) cb.onclick = cambiarPedido;
+  const vc = $("#vercarro"); if (vc) vc.onclick = () => { cambiarPedido(); irA(1); };
   const b = $("#cptodo"); if (b) b.onclick = () => copiar(filas.map((f) => f[1]).join("\n"), "Datos copiados ✅ Pégalos en tu app del banco");
 }
 
@@ -730,7 +735,7 @@ function barra() {
   const [t, u] = totales();
   const e = st.paso === 2 ? envioActual() : 0;
   $("#tot").textContent = peso(t + (e || 0));
-  $("#unid").textContent = `${u} alfajor${u !== 1 ? "es" : ""}` + (st.paso === 2 && st.entrega === "despacho" ? (e ? " + envío" : e === null ? " · envío por coordinar" : " · envío sin costo") : "");
+  $("#unid").textContent = `${u} alfajor${u !== 1 ? "es" : ""}` + (st.paso === 2 && st.entrega === "despacho" ? (e ? " + envío" : "") : "");
   $("#barra").hidden = st.paso >= NOMBRES.length;
   $("#sig").hidden = st.paso === 3;   // en el pago la barra solo lleva el total y "← Volver a Envío"
   if (st.paso === 3 && st.ped) { $("#tot").textContent = peso(st.ped.total); $("#unid").textContent = "Total a pagar"; }
@@ -744,7 +749,7 @@ function barra() {
     f1.innerHTML += `<div class="prog"><i style="width:${Math.min(100, Math.round(t * 100 / (min || 1)))}%"></i></div>`;
   }
   $("#atras").hidden = st.paso !== 2 && st.paso !== 3;
-  $("#atras").textContent = st.paso === 3 ? "← Volver a Envío" : "← Atrás";
+  $("#atras").textContent = st.paso === 3 ? "← Envío" : "← Carrito";
   $("#sig").textContent = st.paso === 1 ? "Continuar al envío →" : (st.enviando ? "Enviando…" : "Ir a pagar →");
   $("#sig").disabled = (st.paso === 1 && u <= 0 && !(st.arma && st.arma.neg + st.arma.bla > 0)) || st.enviando;   // con una caja a medio armar también se puede seguir
   guardarSesion();
