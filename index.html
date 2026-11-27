@@ -762,12 +762,12 @@ window.addEventListener("pageshow", (e) => {
 window.addEventListener("pagehide", guardarSesion);
 
 // Antes de pagar con envío: "agrega X y tu envío es gratis". El cliente elige y sigue directo al pago.
-function ofrecerEnvioGratis() {
-  st.ofertaVista = true;
-  const r = st.cat.despacho, falta = Number(r.minimo || 0) - totales()[0], costo = Number(r.costo || 0);
+// Ventana "agrega alfajores": botones para sumar lo que falta con un toque, más otras salidas.
+// cfg: { icono, titulo, texto, falta, listo, salidas: [[texto, clase, accion]] }
+function ofrecerAgregar(cfg) {
   const neg = alfajores().find((p) => p.id === negroId()), bla = alfajores().find((p) => p.id === blancoId());
   const precio = Math.max((neg || {}).precio || 0, (bla || {}).precio || 0) || 1;
-  const n = Math.max(1, Math.ceil(falta / precio));
+  const n = Math.max(1, Math.ceil(cfg.falta / precio));
   const extra = (a, b) => a * ((neg || {}).precio || precio) + b * ((bla || {}).precio || precio);
   const mitad = [Math.ceil(n / 2), Math.floor(n / 2)];
   const opciones = [neg && ["neg", `Agregar ${n} negro${n > 1 ? "s" : ""}`, n, 0], bla && ["bla", `Agregar ${n} blanco${n > 1 ? "s" : ""}`, 0, n],
@@ -775,24 +775,39 @@ function ofrecerEnvioGratis() {
   const fondo = document.createElement("div");
   fondo.id = "oferta";
   fondo.style.cssText = "position:fixed;inset:0;z-index:50;background:rgba(42,26,18,.45);display:flex;align-items:flex-end;justify-content:center";
-  fondo.innerHTML = `<div role="dialog" aria-modal="true" aria-labelledby="oftit" style="background:var(--sup);width:100%;max-width:520px;border-radius:20px 20px 0 0;padding:22px max(16px, env(safe-area-inset-left, 0px)) calc(18px + env(safe-area-inset-bottom, 0px));box-shadow:0 -8px 30px rgba(0,0,0,.15)">
-    <div style="font-size:30px;line-height:1">🚗</div>
-    <h2 class="tit" id="oftit" style="margin-top:6px">¡Unos alfajores más y tienes envío gratis!</h2>
-    <div class="mut sm">Con ${n} alfajor${n > 1 ? "es" : ""} más te ahorras los <b>${peso(costo)}</b> del envío.</div>
+  fondo.innerHTML = `<div role="dialog" aria-modal="true" aria-labelledby="oftit" style="background:var(--sup);width:100%;max-width:520px;max-height:90vh;overflow:auto;box-sizing:border-box;border-radius:20px 20px 0 0;padding:22px max(16px, env(safe-area-inset-left, 0px)) calc(18px + env(safe-area-inset-bottom, 0px));box-shadow:0 -8px 30px rgba(0,0,0,.15)">
+    <div style="font-size:30px;line-height:1">${cfg.icono}</div>
+    <h2 class="tit" id="oftit" style="margin-top:6px">${cfg.titulo}</h2>
+    <div class="mut sm">${cfg.texto.replace("{n}", `${n} alfajor${n > 1 ? "es" : ""}`)}</div>
     ${opciones.map((o) => `<button class="btn g" data-o="${o[0]}" style="margin-top:10px;width:100%;justify-content:space-between;display:flex;align-items:center;padding:0 16px"><span>${o[1]}</span><span style="font-weight:400">+${peso(extra(o[2], o[3]))}</span></button>`).join("")}
-    <button class="btn sec" id="ofno" style="margin-top:10px;width:100%">No, gracias. Pagar con envío (${peso(costo)})</button></div>`;
+    ${cfg.salidas.map((x, i) => `<button class="btn ${x[1]}" data-s="${i}" style="margin-top:10px;width:100%">${x[0]}</button>`).join("")}</div>`;
   document.body.appendChild(fondo);
-  const esc2 = (e) => { if (e.key === "Escape") { cerrar(); st.ofertaVista = false; } };
+  const esc2 = (e) => { if (e.key === "Escape") { cerrar(); if (cfg.alCerrar) cfg.alCerrar(); } };
   const cerrar = () => { fondo.remove(); document.removeEventListener("keydown", esc2); };
   document.addEventListener("keydown", esc2);
-  fondo.onclick = (ev) => { if (ev.target === fondo) { cerrar(); st.ofertaVista = false; } };   // tocar afuera: vuelve al formulario sin pagar
-  $("#ofno").onclick = () => { cerrar(); enviar(); };
+  fondo.onclick = (ev) => { if (ev.target === fondo) { cerrar(); if (cfg.alCerrar) cfg.alCerrar(); } };   // tocar afuera: vuelve al formulario sin pagar
+  fondo.querySelectorAll("button[data-s]").forEach((b) => b.onclick = () => { cerrar(); cfg.salidas[Number(b.dataset.s)][2](); });
   fondo.querySelectorAll("button[data-o]").forEach((b) => b.onclick = () => {
     const o = opciones.find((x) => x[0] === b.dataset.o);
     if (o[2]) st.cant[negroId()] = (st.cant[negroId()] || 0) + o[2];
     if (o[3]) st.cant[blancoId()] = (st.cant[blancoId()] || 0) + o[3];
-    cerrar(); avisar("¡Listo! Tu envío ahora es gratis 🎉"); enviar();
+    cerrar(); avisar(cfg.listo); if (st.paso === 2) dibujarPaso2(); barra(); enviar();
   });
+}
+function ofrecerEnvioGratis() {
+  st.ofertaVista = true;
+  const r = st.cat.despacho, costo = Number(r.costo || 0);
+  ofrecerAgregar({ icono: "🚗", titulo: "¡Unos alfajores más y tienes envío gratis!", texto: `Con {n} más te ahorras los <b>${peso(costo)}</b> del envío.`,
+    falta: Number(r.minimo || 0) - totales()[0], listo: "¡Listo! Tu envío ahora es gratis 🎉", alCerrar: () => { st.ofertaVista = false; },
+    salidas: [[`No, gracias. Pagar con envío (${peso(costo)})`, "sec", () => enviar()]] });
+}
+// Otra comuna con envío bajo el mínimo: agregar alfajores ahí mismo, ir al carrito o cambiar a retiro gratis.
+function ofrecerMinimoOtras() {
+  const falta = minimoOtras() - totales()[0];
+  ofrecerAgregar({ icono: "📦", titulo: `Te faltan ${peso(falta)} para el envío`, texto: `El envío a otras comunas es desde ${peso(minimoOtras())}. Agrega {n} y seguimos al pago.`,
+    falta, listo: "¡Listo! Ya llegas al mínimo 🎉",
+    salidas: [["🛒 Ir al carrito para elegir", "out", () => irA(1)],
+              ["📍 Mejor retiro gratis en Las Condes", "sec", () => { st.modoOtra = "retiro"; dibujarPaso2(); barra(); avisar("Cambiamos a retiro gratis. Revisa y toca «Ir a pagar»."); }]] });
 }
 
 async function enviar() {
@@ -819,7 +834,7 @@ async function enviar() {
     if (!st.comuna) { avisar("Elige tu comuna para el despacho."); return; }
     if (esOtra() && (st.otra || "").trim().length < 3) { avisar("Escribe en qué comuna estás."); const o = $("#otra"); if (o) o.focus(); return; }
     if (esOtra() && !st.entrega) { avisar("Elige retiro gratis en Las Condes o envío a domicilio."); return; }
-    if (esOtra() && st.entrega === "despacho" && totales()[0] < minimoOtras()) { avisar(`Para envío a otras comunas el pedido mínimo es ${peso(minimoOtras())}. Agrega alfajores o elige retiro gratis.`); return; }
+    if (esOtra() && st.entrega === "despacho" && totales()[0] < minimoOtras()) { if (negroId() || blancoId()) ofrecerMinimoOtras(); else avisar(`Para envío a otras comunas el pedido mínimo es ${peso(minimoOtras())}.`); return; }
     if (st.entrega === "despacho" && (st.direccion || "").trim().length < 5) { avisar("Escribe tu dirección para el despacho."); const d = $("#dir"); if (d) d.focus(); return; }
     if (!st.ofertaVista && !esOtra() && envioActual() > 0 && negroId()) { ofrecerEnvioGratis(); return; }   // le falta poco para el envío gratis: se le ofrece una vez
   }
