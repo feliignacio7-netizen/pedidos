@@ -141,7 +141,7 @@ function preguntar(titulo, texto, botones, alCerrar) {
   f.querySelectorAll("button[data-i]").forEach((b) => b.onclick = () => { cerrar(); botones[Number(b.dataset.i)][2](); });
 }
 // El carrito y los datos se guardan en la pestaña: si el cliente recarga o vuelve atrás, no pierde nada.
-const CAMPOS_SESION = ["paso", "ref", "cant", "cajas", "codigo", "vista", "entrega", "comuna", "otra", "direccion", "depto", "fecha", "programar", "fechaProg", "nombre", "tel", "correo", "medio"];
+const CAMPOS_SESION = ["paso", "ref", "cant", "cajas", "codigo", "vista", "entrega", "comuna", "otra", "modoOtra", "direccion", "depto", "fecha", "programar", "fechaProg", "nombre", "tel", "correo", "medio"];
 function guardarSesion() {
   if (!st.cat || st.paso >= NOMBRES.length) return;
   if (st.paso === 2) leerCampos();
@@ -175,9 +175,20 @@ function comunaZona() { return !!(st.cat && st.cat.despacho && (st.cat.despacho.
 function comunaElegida() { return st.comuna === OTRA ? (st.otra || "").trim() : st.comuna; }
 const esOtra = () => st.comuna === OTRA;
 const esOtraTxt = (c) => /\(otra comuna\)/i.test(c || "");
-function envioActual() {   // misma regla que el servidor; null = por coordinar
-  if (st.entrega !== "despacho" || !despachoActivo()) return 0;
-  if (esOtra()) return null;   // otra comuna: el envío se coordina por WhatsApp
+const sinOtra = (c) => String(c || "").replace(/\s*\(otra comuna\)/i, "");
+// Texto de entrega de un pedido ya hecho (pago, pantalla final): domicilio, retiro en Las Condes o punto con código.
+function lugarPedido(ped) {
+  if (ped.entrega === "despacho") return `🚗 A domicilio: ${esc(ped.direccion || "")}${ped.direccion ? ", " : ""}${esc(sinOtra(ped.comuna))}`;
+  if (esOtraTxt(ped.comuna)) return /Con código/.test(ped.nota || "") || st.codigo ? "📍 Entrega en un punto a coordinar entre ambos" : "📍 Retiro gratis en un punto a coordinar en Las Condes";
+  return "📦 Entrega por coordinar";
+}
+const costoOtras = () => Number(((st.cat || {}).despacho || {}).costo_otras ?? 5000);
+const minimoOtras = () => Number(((st.cat || {}).despacho || {}).minimo_otras ?? 15000);
+// Cómo se entrega: en la zona, a domicilio; en otra comuna, retiro gratis en Las Condes o envío con mínimo (con código: punto a coordinar).
+function modoEntrega() { if (!despachoActivo()) return "retiro"; if (!esOtra()) return "despacho"; return st.codigo ? "retiro" : (st.modoOtra || ""); }
+function envioActual() {   // misma regla que el servidor
+  if (!despachoActivo()) return 0;
+  if (esOtra()) return modoEntrega() === "despacho" ? costoOtras() : 0;   // otra comuna: tarifa fija o retiro gratis
   if (st.codigo) return 0;     // con código: envío gratis
   const r = st.cat.despacho, sub = totales()[0];
   return sub >= Number(r.minimo || 0) ? 0 : Number(r.costo || 0);
@@ -329,11 +340,11 @@ function diasPosibles() { const u = totales()[1]; return ((st.cat.agenda || {}).
 function listaComunas(c) { c = c || []; return c.length > 1 ? c.slice(0, -1).join(", ") + " y " + c[c.length - 1] : (c[0] || ""); }
 function resumenPaso2() {   // resumen del pedido como en un carrito: subtotal, envío y total
   const el = $("#resumen"); if (!el) return;
-  const [t] = totales(), e = envioActual(), desp = st.entrega === "despacho" && despachoActivo();
+  const [t] = totales(), e = envioActual(), modo = modoEntrega(), desp = modo === "despacho";
   el.innerHTML = lineasActuales().filter((l) => !/^caja de navidad/i.test(l.nombre)).map((l) => `<div class="fila sm"><span>${l.cantidad} × ${esc(nombreCorto(l.nombre))}</span><span>${peso(l.cantidad * l.precio)}</span></div>`).join("") +
     st.cajas.map((k) => `<div class="fila sm"><span>🎁 Caja de Navidad de ${k.tam} (${k.neg ? k.neg + " negro" + (k.neg > 1 ? "s" : "") : ""}${k.neg && k.bla ? " y " : ""}${k.bla ? k.bla + " blanco" + (k.bla > 1 ? "s" : "") : ""})</span><span>${peso((cajasCat().find((p) => p.id === k.cajaId) || {}).precio || 0)}</span></div>`).join("") +
     `<hr><div class="fila sm"><span class="mut">Subtotal</span><span>${peso(t)}</span></div>
-     <div class="fila sm"><span class="mut">${desp ? "Entrega a domicilio" : "Entrega"}</span><span>${!desp ? "Gratis" : (e === null ? "por WhatsApp" : e ? peso(e) : "Gratis")}</span></div>
+     <div class="fila sm"><span class="mut">${desp ? "Entrega a domicilio" : esOtra() && modo === "retiro" ? (st.codigo ? "Punto a coordinar" : "Retiro en Las Condes") : "Entrega"}</span><span>${!desp ? (esOtra() && !modo ? "elige cómo" : "Gratis") : e ? peso(e) : "Gratis"}</span></div>
      <hr><div class="fila"><span style="font-weight:600;font-size:16px">Total</span><span style="font-weight:700;font-size:20px">${peso(t + (e || 0))}</span></div>`;
 }
 // Copia lo que está escrito en pantalla a la memoria. Sin esto, si el celular autocompletaba un campo sin avisar
@@ -355,7 +366,7 @@ function dibujarPaso2() {
   if (st.paso === 2) leerCampos();
   const r = st.cat.despacho || {}, act = despachoActivo();
   setTimeout(() => { const v = $("#volver1"); if (v) v.onclick = () => irA(1); }, 0);
-  st.entrega = act ? "despacho" : "retiro";   // solo entrega a domicilio (ya no hay retiro en el metro)
+  st.entrega = modoEntrega();
   if (st.comuna && st.comuna !== OTRA && (r.comunas || []).indexOf(st.comuna) < 0) st.comuna = "";   // comuna guardada de antes que ya no se reparte
   $("#cuerpo").innerHTML = indicador() + `
   <div class="volver" style="margin:0 0 10px"><button class="btn sec" id="volver1">← Volver al Carrito</button></div>
@@ -373,30 +384,38 @@ function dibujarPaso2() {
       return `<button data-f="${x.fecha}" class="${st.fecha === x.fecha ? "sel" : ""}">${DIAS[d.getDay()].slice(0, 3)}<b style="display:block;font-size:18px">${d.getDate()}</b><small>${MESES[d.getMonth()].slice(0, 3)}</small></button>`; }).join("")}</div><div class="sm" id="limite" style="margin-top:8px"></div>`
       : `<div class="sm" style="margin-top:4px">Ya no quedan días disponibles para este pedido 🙏</div><div class="mut sm" style="margin-top:4px">Escríbenos por WhatsApp o Instagram @alfajores_vicencio y vemos cómo ayudarte.</div>`}
   </div>` : ""}
-  ${!agendaActiva() ? `<div class="card" style="margin-top:12px"><h2 class="tit">¿Cuándo lo quieres?</h2>
+  <div class="card" style="margin-top:12px"><h2 class="tit">Entrega</h2>
+    ${act ? `<div class="mut sm">Reparto a domicilio en ${esc(listaComunas(r.comunas))}: ${Number(r.minimo || 0) ? `<b>gratis desde ${peso(r.minimo)}</b>, bajo eso ${peso(r.costo || 0)}` : peso(r.costo || 0)}.</div>
+    <div id="desp">
+      <label class="c" for="comuna">Comuna</label>
+      <select id="comuna"><option value="">Elige tu comuna</option>${(r.comunas || []).map((x) => `<option ${st.comuna === x ? "selected" : ""}>${esc(x)}</option>`).join("")}<option value="${OTRA}" ${esOtra() ? "selected" : ""}>Otra comuna</option></select>
+      ${esOtra() ? `<label class="c" for="otra">¿Qué comuna?</label><input id="otra" autocomplete="address-level2" placeholder="Ej: Macul" value="${esc(st.otra || "")}">
+        ${st.codigo ? `<div class="sm" style="margin-top:10px;padding:10px 12px;border-radius:10px;background:#F6EDE6;color:var(--pri-t)">📍 Con tu código, <b>la entrega es en un punto a coordinar entre ambos</b>, gratis. Te escribimos por WhatsApp para ponernos de acuerdo.</div>`
+        : `<div class="mut sm" style="margin-top:10px">¿Cómo lo quieres recibir?</div>
+        <label class="opc ${st.modoOtra === "retiro" ? "sel" : ""}" id="mo_retiro"><input type="radio" name="modo" value="retiro" ${st.modoOtra === "retiro" ? "checked" : ""}>
+          <div style="flex:1"><div class="fila"><b style="font-weight:600">📍 Retiro en Las Condes</b><span class="gratis">Gratis</span></div><div class="mut sm">En un punto a coordinar por WhatsApp.</div></div></label>
+        <label class="opc ${st.modoOtra === "despacho" ? "sel" : ""}" id="mo_despacho"><input type="radio" name="modo" value="despacho" ${st.modoOtra === "despacho" ? "checked" : ""}>
+          <div style="flex:1"><div class="fila"><b style="font-weight:600">🚗 Envío a domicilio</b><span>${peso(costoOtras())}</span></div><div class="mut sm">Pedido mínimo ${peso(minimoOtras())}. Coordinamos el día y la hora por WhatsApp.</div></div></label>`}` : ""}
+      <div id="dirzona" ${esOtra() && (st.codigo || st.modoOtra !== "despacho") ? "hidden" : ""}>
+      <label class="c" for="dir">Dirección</label><input id="dir" autocomplete="address-line1" placeholder="Calle y número. Ej: Irarrázaval 1234" value="${esc(st.direccion)}">
+      <label class="c" for="depto">Depto, casa o indicaciones <span class="mut">(opcional)</span></label><input id="depto" autocomplete="address-line2" placeholder="Ej: depto 502, torre B" value="${esc(st.depto || "")}"></div>
+      <div id="meta" style="margin-top:12px"></div>
+    </div>` : `<div class="mut sm">Coordinamos la entrega contigo por WhatsApp.</div>`}
+  </div>
+  ${!agendaActiva() && !(act && esOtra()) ? `<div class="card" style="margin-top:12px"><h2 class="tit">¿Cuándo lo quieres?</h2>
     <label class="opc ${!st.programar ? "sel" : ""}" id="pr_no"><input type="radio" name="prog" value="no" ${!st.programar ? "checked" : ""}><div><b style="font-weight:600">Lo antes posible</b><div class="mut sm">Te lo entregamos dentro de 2 días hábiles. Coordinamos la hora por WhatsApp.</div></div></label>
     <label class="opc ${st.programar ? "sel" : ""}" id="pr_si"><input type="radio" name="prog" value="si" ${st.programar ? "checked" : ""}><div style="flex:1"><b style="font-weight:600">Programar para un día</b><div class="mut sm">Lunes a viernes, desde el ${fechaLarga(sumarHabiles(hoyLocal(), 2))}.</div>
       ${st.programar ? `<input type="date" id="fprog" min="${sumarHabiles(hoyLocal(), 2)}" max="${sumarDiasLocal(hoyLocal(), 60)}" value="${esc(st.fechaProg)}" style="margin-top:8px;width:100%;min-height:48px">` : ""}</div></label>
   </div>` : ""}
-  <div class="card" style="margin-top:12px"><h2 class="tit">${act ? "🚗 Entrega a domicilio" : "Entrega"}</h2>
-    ${act ? `<div class="mut sm">Entregamos en ${esc(listaComunas(r.comunas))}. ${Number(r.minimo || 0) ? `<b>Envío gratis desde ${peso(r.minimo)}</b>, bajo eso ${peso(r.costo || 0)}.` : `Envío ${peso(r.costo || 0)}.`}<br>¿Otra comuna? Elige «Otra comuna» y coordinamos el envío por WhatsApp.</div>
-    <div id="desp">
-      <label class="c" for="comuna">Comuna</label>
-      <select id="comuna"><option value="">Elige tu comuna</option>${(r.comunas || []).map((x) => `<option ${st.comuna === x ? "selected" : ""}>${esc(x)}</option>`).join("")}<option value="${OTRA}" ${esOtra() ? "selected" : ""}>Otra comuna</option></select>
-      <div id="otrabox" ${esOtra() ? "" : "hidden"}><label class="c" for="otra">¿Qué comuna?</label><input id="otra" autocomplete="address-level2" placeholder="Ej: Macul" value="${esc(st.otra || "")}">
-        <div class="sm" style="margin-top:8px;padding:10px 12px;border-radius:10px;background:#F6EDE6;color:var(--pri-t)">📲 Para otras comunas, <b>la entrega y el costo del envío los coordinamos contigo por WhatsApp</b>. No necesitas escribir tu dirección ahora. Ahora pagas solo los alfajores.</div></div>
-      <div id="dirzona" ${esOtra() ? "hidden" : ""}>
-      <label class="c" for="dir">Dirección</label><input id="dir" autocomplete="address-line1" placeholder="Calle y número. Ej: Irarrázaval 1234" value="${esc(st.direccion)}">
-      <label class="c" for="depto">Depto, casa o indicaciones <span class="mut">(opcional)</span></label><input id="depto" autocomplete="address-line2" placeholder="Ej: depto 502, torre B" value="${esc(st.depto || "")}">
-      <div id="meta" style="margin-top:12px"></div></div>
-    </div>` : `<div class="mut sm">Coordinamos la entrega contigo por WhatsApp.</div>`}
-  </div>
   <div class="card" style="margin-top:12px"><h2 class="tit" style="margin-bottom:6px">Resumen del pedido</h2><div id="resumen"></div></div>`;
   const info = () => {
     if (act) {
       const e = envioActual(), m = $("#meta"), min = Number(r.minimo || 0), sub = totales()[0];
       if (m) {
-        if (esOtra()) m.innerHTML = "";
+        if (esOtra()) {
+          const falta = minimoOtras() - sub;
+          m.innerHTML = !st.codigo && st.modoOtra === "despacho" && falta > 0 ? `<div class="sm">Te faltan <b>${peso(falta)}</b> para el pedido mínimo de envío a otras comunas. <a href="#" id="sumar" style="color:var(--pri-t);font-weight:600">+ Agregar alfajores</a> o elige retiro gratis.</div>` : "";
+        }
         else if (st.codigo) m.innerHTML = `<div class="sm" style="color:var(--ok);font-weight:600">🎉 Con tu código, el envío es gratis</div>`;
         else if (!st.comuna) m.innerHTML = "";
         else if (!min || !Number(r.costo || 0)) m.innerHTML = "";
@@ -409,8 +428,9 @@ function dibujarPaso2() {
     resumenPaso2(); barra();
   };
   if (act) {
-    $("#comuna").onchange = (e) => { st.comuna = e.target.value; $("#otrabox").hidden = !esOtra(); $("#dirzona").hidden = esOtra(); if (esOtra()) $("#otra").focus(); info(); };
-    $("#otra").oninput = $("#otra").onchange = (e) => { st.otra = e.target.value; };
+    $("#comuna").onchange = (e) => { leerCampos(); st.comuna = e.target.value; dibujarPaso2(); const o = $("#otra"); if (o && !o.value) o.focus(); };
+    const ot = $("#otra"); if (ot) ot.oninput = ot.onchange = (e) => { st.otra = e.target.value; };
+    document.querySelectorAll('input[name="modo"]').forEach((x) => x.onchange = () => { leerCampos(); st.modoOtra = x.value; dibujarPaso2(); });
     $("#dir").onchange = $("#dir").oninput = (e) => { st.direccion = e.target.value; };
     const dp = $("#depto"); if (dp) dp.oninput = dp.onchange = (e) => st.depto = e.target.value;
   }
@@ -481,11 +501,11 @@ function pantallaFinal(ped, como) {
   const resumen = ped ? `<div class="card" style="margin-top:12px"><div style="font-weight:600;font-size:16px;margin-bottom:6px">Tu pedido${ped.codigo ? " #" + esc(ped.codigo) : ""}</div>
     ${(ped.lineas || []).map((l) => `<div class="fila sm"><span>${/^caja de navidad/i.test(l.nombre) ? "🎁 " + esc(l.nombre) : l.cantidad + " × " + esc(nombreCorto(l.nombre))}</span><span>${peso(l.cantidad * l.precio)}</span></div>`).join("")}
     ${ped.fecha_entrega ? `<div class="fila sm"><span>📅 Entrega</span><span><b>${fechaLarga(ped.fecha_entrega)}</b></span></div>` : ""}
-    ${desp ? `<div class="fila sm"><span>🚗 A domicilio</span><span>${esc(ped.comuna || "")}</span></div>` : ""}
+    <div class="fila sm"><span>${lugarPedido(ped)}</span></div>
     <hr><div class="fila"><span style="font-weight:600">Total</span><span style="font-weight:700">${peso(ped.total)}</span></div></div>` : "";
   const paso = (n, t) => `<div class="fila sm" style="justify-content:flex-start;gap:10px;margin-top:8px"><span class="mini">${n}</span><span>${t}</span></div>`;
   const siguientes = (como === "pagado" ? [] : ["Revisamos tu transferencia y te confirmamos."])
-    .concat([ped && esOtraTxt(ped.comuna) ? "Te escribimos por WhatsApp para coordinar el envío a tu comuna y su costo." : `Te escribimos por WhatsApp para coordinar la hora${ped && !ped.fecha_entrega ? " (entrega dentro de 2 días hábiles)" : ""}.`,
+    .concat([ped && esOtraTxt(ped.comuna) ? "Te escribimos por WhatsApp para coordinar el día, la hora y el lugar." : `Te escribimos por WhatsApp para coordinar la hora${ped && !ped.fecha_entrega ? " (entrega dentro de 2 días hábiles)" : ""}.`,
              "Te avisamos por correo cuando tu pedido esté listo o vaya en camino."]);
   $("#cuerpo").innerHTML = indicador() + `
   <div class="card" style="margin-top:4px;text-align:center;padding:22px 16px">
@@ -514,7 +534,7 @@ function cargarDesdePedido(ped) {
   st.nombre = st.nombre || ped.nombre || ""; st.correo = st.correo || ped.correo || "";
   if (!st.tel && ped.telefono) st.tel = String(ped.telefono).replace(/^569/, "").slice(-8);
   st.entrega = ped.entrega === "despacho" ? "despacho" : "retiro";
-  if (esOtraTxt(ped.comuna)) { st.comuna = OTRA; st.otra = String(ped.comuna).replace(/\s*\(otra comuna\)/i, ""); } else st.comuna = ped.comuna || st.comuna;
+  if (esOtraTxt(ped.comuna)) { st.comuna = OTRA; st.otra = sinOtra(ped.comuna); st.modoOtra = ped.entrega === "despacho" ? "despacho" : "retiro"; } else st.comuna = ped.comuna || st.comuna;
   if (ped.direccion) st.direccion = String(ped.direccion).replace(/,?\s*\(⚠[^)]*\)/, "");   // (pedidos antiguos traían una marca del mapa)
   if (st.cajas.length) st.fecha = ped.fecha_entrega || ""; else if (ped.fecha_entrega) { st.programar = true; st.fechaProg = ped.fecha_entrega; }
 }
@@ -546,7 +566,7 @@ function dibujarPaso3(ped, pago) {
   const nom = (st.nombre || "").trim().split(/\s+/).map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(" ");
   const texto = [`Hola 👋, soy ${nom}`,
     e("🛒") + frase(ped.lineas),
-    desp ? e("🚗") + `${comuna}${dir ? " · " + dir : ""} · horario por coordinar` : e("📦") + "Entrega por coordinar",
+    desp ? e("🚗") + `${sinOtra(comuna)}${dir ? " · " + dir : ""} · horario por coordinar` : lugarPedido(ped).replace(/^📍 /, e("📍")),
     e("💰") + "Total " + peso(ped.total) + (desp && envio ? " (con envío)" : ""),
     e("🧾") + "Te envío mi comprobante 🙏"].join("\n");
   const tef = `
@@ -578,7 +598,7 @@ function dibujarPaso3(ped, pago) {
       ? st.cajas.filter((k) => k.cajaId === l.producto_id).map((k) => `<div class="fila sm"><span>🎁 Caja de ${k.tam} (${sabTxt(k)})</span><span>${peso(l.precio)}</span></div>`).join("")
       : `<div class="fila sm"><span>${l.cantidad} × ${esc(/^caja de navidad/i.test(l.nombre) ? "🎁 " + l.nombre : nombreCorto(l.nombre))}</span><span>${peso(l.cantidad * l.precio)}</span></div>`).join("")}
     ${ped.fecha_entrega ? `<div class="fila sm"><span>📅 Entrega</span><span><b>${fechaLarga(ped.fecha_entrega)}</b></span></div>` : ""}
-    ${desp ? `<div class="fila sm"><span>🚗 Envío a ${esc(comuna)}</span><span>${coordinar ? "por coordinar" : envio ? peso(envio) : "sin costo"}</span></div>` : ""}
+    ${desp ? `<div class="fila sm"><span>🚗 Envío a ${esc(sinOtra(comuna))}</span><span>${envio ? peso(envio) : "sin costo"}</span></div>` : coordinar ? `<div class="fila sm"><span>${lugarPedido(ped)}</span><span>sin costo</span></div>` : ""}
     <hr><div class="fila"><span style="font-weight:600;font-size:16px">Total a pagar</span><span style="font-weight:700;font-size:20px">${peso(ped.total)}</span></div></div>
   ${c.mp && !st.avisoMp ? `<div class="card" style="margin-top:12px"><h2 class="tit">Medio de pago</h2>
     <label class="opc ${elegido === "mp" ? "sel" : ""}" id="m_mp"><input type="radio" name="medio" value="mp" ${elegido === "mp" ? "checked" : ""}>
@@ -591,8 +611,8 @@ function dibujarPaso3(ped, pago) {
   ${elegido === "mp" ? mp : elegido === "tef" ? tef : ""}
   ${elegido ? `<div class="card" style="margin-top:12px"><div class="fila" style="justify-content:flex-start"><span class="mini">${elegido === "mp" ? 2 : 3}</span><b style="font-size:16px">Coordinamos la entrega</b></div>
     ${ped.fecha_entrega ? `<div class="sm" style="margin-top:6px">📅 <b>${fechaLarga(ped.fecha_entrega)}</b></div>` : ""}
-    ${desp ? `<div class="sm" style="margin-top:4px">🚗 A domicilio: ${coordinar ? esc(comuna.replace(/\s*\(otra comuna\)/i, "")) + " · dirección y envío por WhatsApp" : esc(dir) + ", " + esc(comuna)}</div>` : ""}
-    <div class="mut sm" style="margin-top:4px">Apenas ${elegido === "mp" ? "se confirme tu pago" : "recibamos tu comprobante"}, <b>te escribimos por WhatsApp</b> para coordinar ${coordinar ? "el envío a tu comuna, su costo y la hora" : "la hora de la entrega"}${ped.fecha_entrega ? "" : " (dentro de 2 días hábiles)"}.</div></div>` : ""}
+    <div class="sm" style="margin-top:4px">${lugarPedido(ped)}</div>
+    <div class="mut sm" style="margin-top:4px">Apenas ${elegido === "mp" ? "se confirme tu pago" : "recibamos tu comprobante"}, <b>te escribimos por WhatsApp</b> para coordinar ${coordinar ? (desp ? "el día y la hora de la entrega" : "el día, la hora y el lugar") : "la hora de la entrega" + (ped.fecha_entrega ? "" : " (dentro de 2 días hábiles)")}.</div></div>` : ""}
   ${c.whatsapp ? `<a class="btn out" style="margin-top:12px" target="_blank" rel="noopener" href="https://wa.me/${waNum(c.whatsapp)}?text=${encodeURIComponent("Hola! Tengo una consulta sobre mi pedido de " + frase(ped.lineas) + ".")}">💬 Tengo una consulta</a>` : ""}
   <p class="mut sm" style="text-align:center">${st.compOk ? "Puedes cerrar esta página." : "Si necesitas cerrar esta página, en tu correo tienes el botón para volver a pagar."} ¡Gracias por apoyar a Alfajores Vicencio! 🤎</p>`;
   document.querySelectorAll('input[name="medio"]').forEach((r) => r.onchange = () => { st.medio = r.value; dibujarPaso3(ped, pago); });
@@ -782,9 +802,10 @@ async function enviar() {
   if (tel.length !== 8) { avisar("Escribe los 8 números de tu celular, los que van después del +569."); return; }
   if ((st.nombre || "").trim().length < 2) { avisar("Escribe tu nombre."); return; }
   if (!/^[^@\s]+@[^@\s]+\.[^@\s]{2,}$/.test((st.correo || "").trim())) { avisar("Escribe un correo válido, por ejemplo nombre@gmail.com."); return; }
-  const fg = despachoActivo() ? 0 : faltaGranel();
-  if (fg) { avisar(`Para retiro gratis en el metro, el mínimo es de ${st.cat.minimo_granel || 4} alfajores. Agrega ${fg} más o elige entrega a domicilio.`); return; }
-  if (!agendaActiva() && st.programar) {
+  st.entrega = modoEntrega();
+  const fg = st.entrega === "retiro" ? faltaGranel() : 0;
+  if (fg) { avisar(`Para retiro, el mínimo es de ${st.cat.minimo_granel || 4} alfajores. Agrega ${fg} más.`); return; }
+  if (!agendaActiva() && st.programar && !esOtra()) {
     const f = st.fechaProg, min = sumarHabiles(hoyLocal(), 2), max = sumarDiasLocal(hoyLocal(), 60);
     if (!f) { avisar("Elige el día para programar tu pedido, o marca «Lo antes posible»."); return; }
     if (f < min || f > max) { avisar(`Puedes programar desde el ${fechaLarga(min)}.`); return; }
@@ -794,19 +815,21 @@ async function enviar() {
     if (!diasPosibles().length) { avisar("Ya no quedan días disponibles para este pedido. Escríbenos por WhatsApp."); return; }
     if (!st.fecha) { avisar("Elige el día de entrega."); return; }
   }
-  if (st.entrega === "despacho" && despachoActivo()) {
+  if (despachoActivo()) {
     if (!st.comuna) { avisar("Elige tu comuna para el despacho."); return; }
     if (esOtra() && (st.otra || "").trim().length < 3) { avisar("Escribe en qué comuna estás."); const o = $("#otra"); if (o) o.focus(); return; }
-    if (!esOtra() && (st.direccion || "").trim().length < 5) { avisar("Escribe tu dirección para el despacho."); const d = $("#dir"); if (d) d.focus(); return; }
-    if (!st.ofertaVista && envioActual() > 0 && negroId()) { ofrecerEnvioGratis(); return; }   // le falta poco para el envío gratis: se le ofrece una vez
+    if (esOtra() && !st.entrega) { avisar("Elige retiro gratis en Las Condes o envío a domicilio."); return; }
+    if (esOtra() && st.entrega === "despacho" && totales()[0] < minimoOtras()) { avisar(`Para envío a otras comunas el pedido mínimo es ${peso(minimoOtras())}. Agrega alfajores o elige retiro gratis.`); return; }
+    if (st.entrega === "despacho" && (st.direccion || "").trim().length < 5) { avisar("Escribe tu dirección para el despacho."); const d = $("#dir"); if (d) d.focus(); return; }
+    if (!st.ofertaVista && !esOtra() && envioActual() > 0 && negroId()) { ofrecerEnvioGratis(); return; }   // le falta poco para el envío gratis: se le ofrece una vez
   }
   st.enviando = true; barra();
   try {
     const r = await fetch(window.API_URL, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" },
       body: JSON.stringify({ accion: "pedido", ref: st.ref, nombre: st.nombre, telefono: tel, correo: (st.correo || "").trim(), nota: st.cajas.length ? "#C " + st.cajas.map((k) => `${k.cajaId}=${negroId()}:${k.neg},${blancoId()}:${k.bla}`).join(";") : "", cantidades: st.cant,
         esperado: (st.totalEsperado = totales()[0] + (envioActual() || 0)),
-        fecha_entrega: agendaActiva() ? st.fecha : (st.programar ? st.fechaProg : ""), codigo: st.codigo || "",
-        entrega: despachoActivo() ? st.entrega : "retiro", comuna: comunaElegida(), otra_comuna: esOtra(), direccion: esOtra() ? "" : [st.direccion || "", (st.depto || "").trim()].filter(Boolean).join(", "), trampa: ($("#trampa") || {}).value || "" }) });
+        fecha_entrega: agendaActiva() ? st.fecha : (st.programar && !esOtra() ? st.fechaProg : ""), codigo: st.codigo || "",
+        entrega: despachoActivo() ? st.entrega : "retiro", comuna: comunaElegida(), otra_comuna: esOtra(), direccion: st.entrega !== "despacho" ? "" : [st.direccion || "", (st.depto || "").trim()].filter(Boolean).join(", "), trampa: ($("#trampa") || {}).value || "" }) });
     const d = await r.json();
     st.enviando = false;
     if (!d.ok) {
