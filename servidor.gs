@@ -585,7 +585,7 @@ function cuerpoCorreo(f, I, tipo) {
   const envio = Number(f[I.envio] || 0), desp = String(f[I.entrega]) === "despacho";
   const dia = fechaBonita(f[I.fecha_entrega]);
   const entrega = desp ? `🚗 Despacho a ${escH(f[I.direccion])}, ${escH(f[I.comuna])}` : "🚇 Retiro en metro Escuela Militar";
-  if (tipo === "recordatorio" && (String(f[I.mp_pago] || "") || String(f[I.anulado] || ""))) return "";
+  if (tipo === "recordatorio" && (String(f[I.mp_pago] || "") || String(f[I.anulado] || "") || tieneComprobante(ref))) return "";
   const pagar = (tipo === "recibido" || tipo === "recordatorio") && !String(f[I.mp_pago] || "") ? `<p style="text-align:center;margin:24px 0"><a href="${PAGINA}/?pagar=${encodeURIComponent(ref)}" style="background:#BC7B69;color:#2A1A12;text-decoration:none;padding:12px 22px;border-radius:999px;font-weight:600">Pagar mi pedido</a></p>` : "";
   const boton = pagar || (tipo === "entregado" ? `<p style="text-align:center;margin:24px 0"><a href="${PAGINA}/opinion.html?p=${encodeURIComponent(ref)}" style="background:#BC7B69;color:#2A1A12;text-decoration:none;padding:12px 22px;border-radius:999px;font-weight:600">Dejar mi opinión</a></p>` : "");
   return `<div style="background:#F3EEE6;padding:24px 12px;font-family:Helvetica,Arial,sans-serif;color:#2A1A12">
@@ -647,7 +647,17 @@ function verPedido(d) {
   const h = hoja(), x = buscarFila(h, ref), I = {}; COLUMNAS.forEach((k, i) => I[k] = i);
   if (!x || String(x.f[I.anulado] || "")) return json({ ok: false, error: "No encontramos este pedido. Si lo cambiaste, revisa el correo del pedido nuevo." });
   const c = leerCfg();
-  return json({ ok: true, pagado: !!String(x.f[I.mp_pago] || ""), pedido: filaAPedido(x.f, I), pago: c.pago || {} });
+  return json({ ok: true, pagado: !!String(x.f[I.mp_pago] || ""), comprobante: tieneComprobante(ref), pedido: filaAPedido(x.f, I), pago: c.pago || {} });
+}
+
+function tieneComprobante(ref) {
+  try {
+    const h = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(HOJA_COMP);
+    if (!h) return false;
+    const filas = h.getDataRange().getValues();
+    for (let i = 1; i < filas.length; i++) if (String(filas[i][0]) === String(ref)) return true;
+  } catch (e) {}
+  return false;
 }
 
 function anularPedido(d) {

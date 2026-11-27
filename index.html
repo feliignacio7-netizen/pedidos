@@ -107,7 +107,7 @@ const $ = (s) => document.querySelector(s);
 const peso = (n) => "$" + Math.round(n).toLocaleString("es-CL");
 const esc = (t) => String(t ?? "").replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const BANDERA = '<svg viewBox="0 0 90 60"><rect width="90" height="60" fill="#fff"/><rect y="30" width="90" height="30" fill="#D52B1E"/><rect width="30" height="30" fill="#0039A6"/><polygon points="15,5 17.5,11.6 24.5,11.9 19,16.3 20.9,23.1 15,19.2 9.1,23.1 11,16.3 5.5,11.9 12.5,11.6" fill="#fff"/></svg>';
-const NOMBRES = ["Carrito", "Envío", "Pago"];
+const NOMBRES = ["Carrito", "Envío", "Pago", "Listo"];
 const st = { paso: 1, cat: null, cant: {}, cajas: [], arma: null, medio: "", fecha: "", codigo: "", vista: "", programar: false, fechaProg: "", entrega: "retiro", comuna: "", otra: "", direccion: "", ref: (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random().toString(36).slice(2)), enviando: false };
 
 function avisar(t) { const a = $("#aviso"); a.textContent = t; a.style.display = "block"; clearTimeout(avisar.t); avisar.t = setTimeout(() => a.style.display = "none", 3200); }
@@ -190,9 +190,10 @@ function piso(id) { return 0; }
 
 function indicador() {
   let h = "";
-  NOMBRES.forEach((n, i) => { const k = i + 1, c = k === st.paso ? "act" : k < st.paso ? "ok" : "";
-    h += `<div class="p ${c}"><div class="n">${k < st.paso ? "✓" : k}</div>${n}</div>`;
-    if (k < NOMBRES.length) h += `<div class="l ${k < st.paso ? "ok" : ""}"></div>`; });
+  const fin = st.paso >= NOMBRES.length;   // pedido pagado o comprobante recibido: todo en ✓
+  NOMBRES.forEach((n, i) => { const k = i + 1, hecho = fin || k < st.paso, c = hecho ? "ok" : k === st.paso ? "act" : "";
+    h += `<div class="p ${c}"><div class="n">${hecho ? "✓" : k}</div>${n}</div>`;
+    if (k < NOMBRES.length) h += `<div class="l ${fin || k < st.paso ? "ok" : ""}"></div>`; });
   return `<div class="ind">${h}</div>`;
 }
 
@@ -229,6 +230,23 @@ function dibujarCajas() {
   });
 }
 
+function bannerPendiente() {
+  const p = st.pendiente; if (!p) return "";
+  setTimeout(() => {
+    const r = $("#retomar"), o = $("#olvidar");
+    if (r) r.onclick = () => { st.pendiente = null; pagarDespues(p.ref); };
+    if (o) o.onclick = () => {   // empieza de cero: el pedido anterior se anula y libera su cupo
+      fetch(window.API_URL, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify({ accion: "anular", ref: p.ref }) }).catch(() => {});
+      guardarPendiente(""); st.pendiente = null; dibujarPaso1(); barra();
+    };
+  }, 0);
+  return `<div class="card" id="pendiente" style="border-color:var(--pri);background:#F6EDE6;margin-bottom:12px">
+    <b>Tienes un pedido sin pagar${p.pedido.codigo ? " (#" + esc(p.pedido.codigo) + ")" : ""}</b>
+    <div class="mut sm" style="margin-top:4px">${esc(frase(p.pedido.lineas))} · ${peso(p.pedido.total)}</div>
+    <button class="btn g" id="retomar" style="margin-top:10px">Pagar ese pedido</button>
+    <button class="btn sec" id="olvidar" style="margin-top:8px">Anularlo y empezar uno nuevo</button></div>`;
+}
+
 function dibujarPaso1() {
   const c = st.cat, hayCajas = cajasCat().length > 0 && negroId() && blancoId() && !campanaCerrada();
   if (!st.vista) st.vista = hayCajas ? "cajas" : "granel";
@@ -236,7 +254,7 @@ function dibujarPaso1() {
   const nSueltos = alfajores().reduce((a, p) => a + (st.cant[p.id] || 0), 0);
   const precioMin = Math.min(...cajasCat().map((p) => p.precio).concat([Infinity]));
   const unidad = (alfajores()[0] || {}).precio || 0;
-  $("#cuerpo").innerHTML = indicador() + `
+  $("#cuerpo").innerHTML = bannerPendiente() + indicador() + `
   ${st.codigo ? `<div class="banda">🤝 Precio especial con código${(alfajores()[0] || {}).antes ? ` · <b>-${pctDesc(alfajores()[0])}%</b>` : ""}</div>`
     : (alfajores()[0] || {}).antes ? `<div class="banda">🔥 <b>Cyber -${pctDesc(alfajores()[0])}%</b>: alfajor a ${peso(unidad)} <s style="opacity:.7">${peso(alfajores()[0].antes)}</s>${alfajores()[0].hasta ? ` hasta el <b>${fechaLarga(alfajores()[0].hasta)}</b>` : ""}</div>`
     : ""}
@@ -421,7 +439,42 @@ async function comprimirImagen(archivo) {
 
 // Logo de Mercado Pago: archivo oficial "mercadopago.svg" junto a la página (si no está, no se muestra nada).
 function LOGO_MP(estilo) { return `<img src="mercadopago.svg" alt="Mercado Pago" style="${estilo};width:auto;display:inline-block" onerror="this.remove()">`; }
+// Pedido sin pagar guardado en este teléfono: si el cliente cierra o vuelve atrás desde Mercado Pago, puede retomarlo.
+function guardarPendiente(ref) { try { if (ref) localStorage.setItem("av_pendiente", JSON.stringify({ ref: ref, t: Date.now() })); else localStorage.removeItem("av_pendiente"); } catch (e) {} }
+function leerPendiente() { try { const x = JSON.parse(localStorage.getItem("av_pendiente") || "null"); return x && Date.now() - x.t < 3 * 3600e3 ? x.ref : ""; } catch (e) { return ""; } }
+
+// Pantalla final: el cliente ya pagó (tarjeta) o ya mandó su comprobante. No queda nada por hacer.
+function pantallaFinal(ped, como) {
+  guardarPendiente("");
+  st.paso = NOMBRES.length; $("#barra").hidden = true; $("#sub").hidden = true; window.scrollTo(0, 0);
+  const c = st.cat || {};
+  const titulo = como === "pagado" ? "¡Listo! Tu pago está confirmado" : como === "wa" ? "¡Listo! Revisamos tu comprobante por WhatsApp" : "¡Listo! Recibimos tu comprobante";
+  const bajada = como === "pagado" ? "Tu pedido quedó confirmado. No tienes que hacer nada más." : "Lo revisamos y te confirmamos por WhatsApp. No tienes que hacer nada más.";
+  const desp = ped && ped.entrega === "despacho";
+  const resumen = ped ? `<div class="card" style="margin-top:12px"><div style="font-weight:600;font-size:16px;margin-bottom:6px">Tu pedido${ped.codigo ? " #" + esc(ped.codigo) : ""}</div>
+    ${(ped.lineas || []).map((l) => `<div class="fila sm"><span>${/^caja de navidad/i.test(l.nombre) ? "🎁 " + esc(l.nombre) : l.cantidad + " × " + esc(nombreCorto(l.nombre))}</span><span>${peso(l.cantidad * l.precio)}</span></div>`).join("")}
+    ${ped.fecha_entrega ? `<div class="fila sm"><span>📅 Entrega</span><span><b>${fechaLarga(ped.fecha_entrega)}</b></span></div>` : ""}
+    <div class="fila sm"><span>${desp ? "🚗 A domicilio" : "🚇 Metro Escuela Militar"}</span><span>${desp ? esc(ped.comuna || "") : "Gratis"}</span></div>
+    <hr><div class="fila"><span style="font-weight:600">Total</span><span style="font-weight:700">${peso(ped.total)}</span></div></div>` : "";
+  const paso = (n, t) => `<div class="fila sm" style="justify-content:flex-start;gap:10px;margin-top:8px"><span class="mini">${n}</span><span>${t}</span></div>`;
+  const siguientes = (como === "pagado" ? [] : ["Revisamos tu transferencia y te confirmamos."])
+    .concat([`Te escribimos por WhatsApp para coordinar la hora${ped && !ped.fecha_entrega ? " (entrega dentro de 2 días hábiles)" : ""}.`,
+             "Te avisamos por correo cuando tu pedido esté listo o vaya en camino."]);
+  $("#cuerpo").innerHTML = indicador() + `
+  <div class="card" style="margin-top:4px;text-align:center;padding:22px 16px">
+    <div style="font-size:40px;line-height:1">🎉</div>
+    <h2 class="tit" style="margin-top:8px">${titulo}</h2>
+    <div class="mut sm">${bajada}</div></div>
+  ${resumen}
+  <div class="card" style="margin-top:12px"><div style="font-weight:600;font-size:16px">¿Qué sigue?</div>${siguientes.map((t, i) => paso(i + 1, t)).join("")}</div>
+  ${c.whatsapp ? `<a class="btn out" style="margin-top:12px" target="_blank" rel="noopener" href="https://wa.me/${waNum(c.whatsapp)}?text=${encodeURIComponent("Hola! Tengo una consulta sobre mi pedido" + (ped && ped.codigo ? " #" + ped.codigo : "") + ".")}">💬 Tengo una consulta</a>` : ""}
+  ${como === "comp" ? `<div class="mut xs" style="text-align:center;margin-top:8px">¿Te equivocaste de imagen? Mándanos la correcta por WhatsApp.</div>` : ""}
+  <a class="btn sec" style="margin-top:12px" href="${location.pathname}">Hacer otro pedido</a>
+  <p class="mut sm" style="text-align:center">Puedes cerrar esta página. ¡Gracias por apoyar a Alfajores Vicencio! 🤎</p>`;
+}
+
 function dibujarPaso3(ped, pago) {
+  st.ped = ped; st.pendiente = null; guardarPendiente(st.ref);
   const c = st.cat;
   const rut = (r) => { const l = String(r || "").replace(/[^0-9kK]/g, ""); return l.length < 8 ? String(r || "").trim() : Number(l.slice(0, -1)).toLocaleString("es-CL") + "-" + l.slice(-1).toUpperCase(); };
   const filas = [["Nombre", pago.titular], ["RUT", rut(pago.rut)], ["Banco", pago.banco], ["Tipo de cuenta", pago.tipo], ["N° de cuenta", pago.numero], ["Correo", pago.correo]].filter((f) => f[1]);
@@ -512,10 +565,18 @@ function dibujarPaso3(ped, pago) {
       const d = await r.json(); st.subiendo = false;
       if (!d.ok) { avisar(d.error || "No pudimos subirlo. Envíalo por WhatsApp."); pintarComp(); return; }
       st.compOk = true; st.comp = null;
+      pantallaFinal(ped, "comp"); return;
     } catch (err) { st.subiendo = false; avisar("Sin conexión. Revisa tu internet e intenta de nuevo."); }
     pintarComp();
   }
   pintarComp();
+  document.addEventListener("click", function yaWa(ev) {   // mandó el comprobante por WhatsApp: se ofrece cerrar el pedido
+    if (!ev.target.closest || !ev.target.closest("#wacomp")) return;
+    document.removeEventListener("click", yaWa);
+    setTimeout(() => { const el = $("#cardcomp"); if (!el || $("#yawa")) return;
+      el.insertAdjacentHTML("beforeend", `<button class="btn g" id="yawa" style="margin-top:10px">Ya lo envié por WhatsApp ✓</button>`);
+      $("#yawa").onclick = () => pantallaFinal(ped, "wa"); }, 800);
+  });
   const bm = $("#pagomp"); if (bm) bm.onclick = () => irAPagarMp(st.ref, bm);
   const cb = $("#cambiar"); if (cb) cb.onclick = () => {   // vuelve a editar: el pedido anterior se anula y se arma uno nuevo
     if (st.compOk) return;
@@ -655,9 +716,9 @@ async function volvioDeMp(ref) {
     await new Promise((ok) => setTimeout(ok, 2500));
   }
   if (d.pagado) {
-    $("#cuerpo").innerHTML = `<div class="card"><div style="background:#E4EBDF;color:var(--ok);border-radius:12px;padding:12px 14px"><b>✅ ¡Pago recibido!</b>
-      <div class="sm" style="margin-top:2px">Tu pedido quedó confirmado. Te escribimos por WhatsApp para coordinar la hora de la entrega.</div></div></div>
-      <p class="mut sm" style="text-align:center">Puedes cerrar esta página. ¡Gracias por apoyar a Alfajores Vicencio! 🤎</p>`;
+    let v = {};
+    try { v = await (await fetch(window.API_URL, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify({ accion: "ver_pedido", ref: ref }) })).json(); } catch (e) {}
+    pantallaFinal(v.ok ? v.pedido : null, "pagado");
   } else {
     $("#cuerpo").innerHTML = `<div class="card"><b>Aún no vemos tu pago</b>
       <div class="mut sm" style="margin-top:6px">${d.estado === "rejected" ? "Mercado Pago rechazó el pago. Puedes intentar con otra tarjeta." : "Si alcanzaste a pagar, puede tardar unos minutos en confirmarse."}</div>
@@ -674,7 +735,7 @@ async function pagarDespues(ref) {
   let d = {};
   try { const r = await fetch(window.API_URL, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify({ accion: "ver_pedido", ref: ref }) }); d = await r.json(); } catch (e) {}
   if (!d.ok) { $("#cuerpo").innerHTML = `<div class="card"><b>${esc(d.error || "No pudimos cargar tu pedido.")}</b><div class="mut sm" style="margin-top:6px">Escríbenos por WhatsApp y te ayudamos.</div><a class="btn g" style="margin-top:12px" href="${location.pathname}">Hacer un pedido nuevo</a></div>`; $("#barra").hidden = true; return; }
-  if (d.pagado) { $("#cuerpo").innerHTML = `<div class="card"><div style="background:#E4EBDF;color:var(--ok);border-radius:12px;padding:12px 14px"><b>✅ Este pedido ya está pagado</b><div class="sm" style="margin-top:2px">Te escribimos por WhatsApp para coordinar la entrega.</div></div></div>`; $("#barra").hidden = true; return; }
+  if (d.pagado || d.comprobante) { st.ref = ref; pantallaFinal(d.pedido, d.pagado ? "pagado" : "comp"); return; }
   st.ref = ref; st.desdeCorreo = true; st.nombre = d.pedido.nombre; st.paso = 3; barra(); dibujarPaso3(d.pedido, d.pago || {});
 }
 
@@ -695,6 +756,15 @@ async function iniciar() {
     }
     sub.textContent = ""; sub.hidden = true;
     irA(1);
+    const pend = leerPendiente();
+    if (pend) {   // volvió atrás desde Mercado Pago o cerró la página: se ofrece retomar el pago
+      try {
+        const v = await (await fetch(window.API_URL, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify({ accion: "ver_pedido", ref: pend }) })).json();
+        if (!v.ok || v.pagado || v.comprobante) { guardarPendiente(""); return; }
+        st.pendiente = { ref: pend, pedido: v.pedido };
+        if (st.paso === 1) dibujarPaso1();
+      } catch (e) {}
+    }
   } catch (e) {
     sub.textContent = "No pudimos cargar la página. Intenta de nuevo en un momento o escríbenos por Instagram @alfajores_vicencio.";
   }
