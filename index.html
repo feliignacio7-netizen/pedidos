@@ -141,7 +141,7 @@ function preguntar(titulo, texto, botones, alCerrar) {
   f.querySelectorAll("button[data-i]").forEach((b) => b.onclick = () => { cerrar(); botones[Number(b.dataset.i)][2](); });
 }
 // El carrito y los datos se guardan en la pestaña: si el cliente recarga o vuelve atrás, no pierde nada.
-const CAMPOS_SESION = ["paso", "ref", "cant", "cajas", "codigo", "vista", "entrega", "comuna", "direccion", "depto", "fecha", "programar", "fechaProg", "nombre", "tel", "correo", "medio"];
+const CAMPOS_SESION = ["paso", "ref", "cant", "cajas", "codigo", "vista", "entrega", "comuna", "otra", "direccion", "depto", "fecha", "programar", "fechaProg", "nombre", "tel", "correo", "medio"];
 function guardarSesion() {
   if (!st.cat || st.paso >= NOMBRES.length) return;
   try { const o = {}; CAMPOS_SESION.forEach((k) => o[k] = st[k]); sessionStorage.setItem("av_sesion", JSON.stringify(o)); } catch (e) {}
@@ -216,7 +216,7 @@ async function montarMaps(alCambiar) {
 const NOMINATIM = "https://nominatim.openstreetmap.org/search?format=jsonv2&addressdetails=1&countrycodes=cl&limit=5&accept-language=es&q=";
 function comunasDe(a) { return [a.suburb, a.city_district, a.town, a.municipality, a.city, a.village].filter(Boolean); }
 async function verificarDir() {
-  const dir = (st.direccion || "").trim(), com = st.comuna, clave = sinTildes(dir) + "|" + com;
+  const dir = (st.direccion || "").trim(), com = comunaElegida(), clave = sinTildes(dir) + "|" + com;
   if (st.dirCheck && st.dirCheck.clave === clave) return st.dirCheck;
   let r = { clave, estado: "error" };
   try {
@@ -239,17 +239,17 @@ async function verificarDir() {
 }
 function pintarDir(r) {
   const el = $("#dirok"); if (!el || !r) return;
-  if (r.estado === "ok") { el.innerHTML = `<span style="color:var(--ok);font-weight:600">✓ Dirección encontrada en ${esc(st.comuna)}</span>`; return; }
+  if (r.estado === "ok") { el.innerHTML = `<span style="color:var(--ok);font-weight:600">✓ Dirección encontrada en ${esc(comunaElegida())}</span>`; return; }
   if (r.estado === "error" || st.dirForzada) { el.innerHTML = st.dirForzada ? `<span class="mut">Ok, la revisamos contigo por WhatsApp.</span>` : ""; return; }
   el.innerHTML = `<div style="color:#9a3b2a;margin-top:2px">${r.estado === "otra"
-      ? `Encontramos esa dirección en <b>${esc(r.donde)}</b>, no en ${esc(st.comuna)}. Revisa la calle o la comuna.`
-      : `No encontramos esa dirección en ${esc(st.comuna)}. Revisa que la calle y el número estén bien escritos.`}</div>
+      ? `Encontramos esa dirección en <b>${esc(r.donde)}</b>, no en ${esc(comunaElegida())}. Revisa la calle o la comuna.`
+      : `No encontramos esa dirección en ${esc(comunaElegida())}. Revisa que la calle y el número estén bien escritos.`}</div>
     <button class="btn sec" id="dirsi" type="button" style="height:36px;margin-top:6px;padding:0 12px;font-size:13px">Mi dirección está bien escrita</button>`;
   $("#dirsi").onclick = () => { st.dirForzada = true; pintarDir(r); };
 }
 async function revisarDir() {
-  if (!st.comuna || !/\d/.test(st.direccion || "")) return null;
-  const ya = st.dirCheck && st.dirCheck.clave === sinTildes((st.direccion || "").trim()) + "|" + st.comuna;
+  if (!comunaElegida() || !/\d/.test(st.direccion || "")) return null;
+  const ya = st.dirCheck && st.dirCheck.clave === sinTildes((st.direccion || "").trim()) + "|" + comunaElegida();
   if (ya) return st.dirCheck;   // ya revisada: no se repinta (así no se pierde el clic en "Mi dirección está bien escrita")
   const el = $("#dirok"); if (el) el.innerHTML = `<span class="mut">Revisando la dirección…</span>`;
   const r = await verificarDir(); pintarDir(r); return r;
@@ -257,9 +257,13 @@ async function revisarDir() {
 
 function despachoActivo() { return !!(st.cat && st.cat.despacho && st.cat.despacho.activo); }
 function comunaZona() { return !!(st.cat && st.cat.despacho && (st.cat.despacho.comunas || []).indexOf(st.comuna) >= 0); }
-function comunaElegida() { return st.comuna; }
+function comunaElegida() { return st.comuna === OTRA ? (st.otra || "").trim() : st.comuna; }
+const esOtra = () => st.comuna === OTRA;
+const esOtraTxt = (c) => /\(otra comuna\)/i.test(c || "");
 function envioActual() {   // misma regla que el servidor; null = por coordinar
   if (st.entrega !== "despacho" || !despachoActivo()) return 0;
+  if (esOtra()) return null;   // otra comuna: el envío se coordina por WhatsApp
+  if (st.codigo) return 0;     // con código: envío gratis
   const r = st.cat.despacho, sub = totales()[0];
   return sub >= Number(r.minimo || 0) ? 0 : Number(r.costo || 0);
 }
@@ -338,7 +342,7 @@ function dibujarPaso1() {
   const precioMin = Math.min(...cajasCat().map((p) => p.precio).concat([Infinity]));
   const unidad = (alfajores()[0] || {}).precio || 0;
   $("#cuerpo").innerHTML = bannerPendiente() + indicador() + `
-  ${st.codigo ? `<div class="banda">🤝 Precio especial con código${(alfajores()[0] || {}).antes ? ` · <b>-${pctDesc(alfajores()[0])}%</b>` : ""}</div>`
+  ${st.codigo ? `<div class="banda">🤝 Precio especial y envío gratis con código${(alfajores()[0] || {}).antes ? ` · <b>-${pctDesc(alfajores()[0])}%</b>` : ""}</div>`
     : (alfajores()[0] || {}).antes ? `<div class="banda">🔥 <b>Cyber -${pctDesc(alfajores()[0])}%</b>: alfajor a ${peso(unidad)} <s style="opacity:.7">${peso(alfajores()[0].antes)}</s>${alfajores()[0].hasta ? ` hasta el <b>${fechaLarga(alfajores()[0].hasta)}</b>` : ""}</div>`
     : ""}
   ${hayCajas ? `<div class="seg" role="tablist">
@@ -414,14 +418,14 @@ function resumenPaso2() {   // resumen del pedido como en un carrito: subtotal, 
   el.innerHTML = lineasActuales().filter((l) => !/^caja de navidad/i.test(l.nombre)).map((l) => `<div class="fila sm"><span>${l.cantidad} × ${esc(nombreCorto(l.nombre))}</span><span>${peso(l.cantidad * l.precio)}</span></div>`).join("") +
     st.cajas.map((k) => `<div class="fila sm"><span>🎁 Caja de Navidad de ${k.tam} (${k.neg ? k.neg + " negro" + (k.neg > 1 ? "s" : "") : ""}${k.neg && k.bla ? " y " : ""}${k.bla ? k.bla + " blanco" + (k.bla > 1 ? "s" : "") : ""})</span><span>${peso((cajasCat().find((p) => p.id === k.cajaId) || {}).precio || 0)}</span></div>`).join("") +
     `<hr><div class="fila sm"><span class="mut">Subtotal</span><span>${peso(t)}</span></div>
-     <div class="fila sm"><span class="mut">${desp ? "Entrega a domicilio" : "Entrega"}</span><span>${!desp ? "Gratis" : (e === null ? "por coordinar" : e ? peso(e) : "Gratis")}</span></div>
+     <div class="fila sm"><span class="mut">${desp ? "Entrega a domicilio" : "Entrega"}</span><span>${!desp ? "Gratis" : (e === null ? "por WhatsApp" : e ? peso(e) : "Gratis")}</span></div>
      <hr><div class="fila"><span style="font-weight:600;font-size:16px">Total</span><span style="font-weight:700;font-size:20px">${peso(t + (e || 0))}</span></div>`;
 }
 function dibujarPaso2() {
   const r = st.cat.despacho || {}, act = despachoActivo();
   setTimeout(() => { const v = $("#volver1"); if (v) v.onclick = () => irA(1); }, 0);
   st.entrega = act ? "despacho" : "retiro";   // solo entrega a domicilio (ya no hay retiro en el metro)
-  if (st.comuna && (r.comunas || []).indexOf(st.comuna) < 0) st.comuna = "";   // comuna guardada de antes que ya no se reparte
+  if (st.comuna && st.comuna !== OTRA && (r.comunas || []).indexOf(st.comuna) < 0) st.comuna = "";   // comuna guardada de antes que ya no se reparte
   $("#cuerpo").innerHTML = indicador() + `
   <div class="volver" style="margin:0 0 10px"><button class="btn sec" id="volver1">← Volver al Carrito</button></div>
   <div class="card"><h2 class="tit">Contacto</h2>
@@ -444,10 +448,12 @@ function dibujarPaso2() {
       ${st.programar ? `<input type="date" id="fprog" min="${sumarHabiles(hoyLocal(), 2)}" max="${sumarDiasLocal(hoyLocal(), 60)}" value="${esc(st.fechaProg)}" style="margin-top:8px;width:100%;min-height:48px">` : ""}</div></label>
   </div>` : ""}
   <div class="card" style="margin-top:12px"><h2 class="tit">${act ? "🚗 Entrega a domicilio" : "Entrega"}</h2>
-    ${act ? `<div class="mut sm">Entregamos en ${esc(listaComunas(r.comunas))}. ${Number(r.minimo || 0) ? `<b>Envío gratis desde ${peso(r.minimo)}</b>, bajo eso ${peso(r.costo || 0)}.` : `Envío ${peso(r.costo || 0)}.`}<br>¿Estás en otra comuna? Escríbenos por WhatsApp y lo vemos.</div>
+    ${act ? `<div class="mut sm">Entregamos en ${esc(listaComunas(r.comunas))}. ${Number(r.minimo || 0) ? `<b>Envío gratis desde ${peso(r.minimo)}</b>, bajo eso ${peso(r.costo || 0)}.` : `Envío ${peso(r.costo || 0)}.`}<br>¿Otra comuna? Elige «Otra comuna» y coordinamos el envío por WhatsApp.</div>
     <div id="desp">
       <label class="c" for="comuna">Comuna</label>
-      <select id="comuna"><option value="">Elige tu comuna</option>${(r.comunas || []).map((x) => `<option ${st.comuna === x ? "selected" : ""}>${esc(x)}</option>`).join("")}</select>
+      <select id="comuna"><option value="">Elige tu comuna</option>${(r.comunas || []).map((x) => `<option ${st.comuna === x ? "selected" : ""}>${esc(x)}</option>`).join("")}<option value="${OTRA}" ${esOtra() ? "selected" : ""}>Otra comuna</option></select>
+      <div id="otrabox" ${esOtra() ? "" : "hidden"}><label class="c" for="otra">¿Qué comuna?</label><input id="otra" autocomplete="address-level2" placeholder="Ej: Macul" value="${esc(st.otra || "")}">
+        <div class="xs" style="margin-top:4px;color:var(--pri-t)">📲 El envío a otras comunas y su costo <b>lo coordinamos por WhatsApp</b>. Ahora pagas solo los alfajores.</div></div>
       <label class="c" for="dir">Dirección</label><div id="dirbox"><input id="dir" autocomplete="address-line1" placeholder="Calle y número. Ej: Irarrázaval 1234" value="${esc(st.direccion)}"></div>
       <div class="xs" id="dirok" style="margin-top:4px"></div>
       <label class="c" for="depto">Depto, casa o indicaciones <span class="mut">(opcional)</span></label><input id="depto" autocomplete="address-line2" placeholder="Ej: depto 502, torre B" value="${esc(st.depto || "")}">
@@ -459,7 +465,9 @@ function dibujarPaso2() {
     if (act) {
       const e = envioActual(), m = $("#meta"), min = Number(r.minimo || 0), sub = totales()[0];
       if (m) {
-        if (!st.comuna) m.innerHTML = "";
+        if (esOtra()) m.innerHTML = "";
+        else if (st.codigo) m.innerHTML = `<div class="sm" style="color:var(--ok);font-weight:600">🎉 Con tu código, el envío es gratis</div>`;
+        else if (!st.comuna) m.innerHTML = "";
         else if (!min || !Number(r.costo || 0)) m.innerHTML = "";
         else if (sub >= min) m.innerHTML = `<div class="sm" style="color:var(--ok);font-weight:600">🎉 ¡Tu entrega a ${esc(st.comuna)} es gratis!</div>`;
         else m.innerHTML = `<div class="sm">Te faltan <b>${peso(min - sub)}</b> para envío gratis a tu domicilio (desde ${peso(min)}). <a href="#" id="sumar" style="color:var(--pri-t);font-weight:600">+ Agregar alfajores</a></div>
@@ -470,7 +478,10 @@ function dibujarPaso2() {
     resumenPaso2(); barra();
   };
   if (act) {
-    $("#comuna").onchange = (e) => { st.comuna = e.target.value; st.dirForzada = false; info(); if (!st.cat.maps_key && (st.direccion || "").trim()) revisarDir(); };
+    $("#comuna").onchange = (e) => { st.comuna = e.target.value; st.dirForzada = false; $("#otrabox").hidden = !esOtra(); if (esOtra()) $("#otra").focus();
+      info(); if (!st.cat.maps_key && (st.direccion || "").trim() && comunaElegida()) revisarDir(); };
+    $("#otra").oninput = (e) => { st.otra = e.target.value; st.dirForzada = false; const o = $("#dirok"); if (o) o.innerHTML = ""; };
+    $("#otra").onblur = () => { if (!st.cat.maps_key && (st.otra || "").trim().length >= 3 && (st.direccion || "").trim().length >= 5) revisarDir(); };
     $("#dir").oninput = (e) => { st.direccion = e.target.value; st.dirValida = false; st.dirForzada = false; const o = $("#dirok"); if (o && !st.cat.maps_key) o.innerHTML = ""; };
     if (!st.cat.maps_key) { $("#dir").onblur = () => { if ((st.direccion || "").trim().length >= 5) revisarDir(); }; if (st.dirCheck) pintarDir(st.dirCheck); }
     const dp = $("#depto"); if (dp) dp.oninput = (e) => st.depto = e.target.value;
@@ -547,7 +558,7 @@ function pantallaFinal(ped, como) {
     <hr><div class="fila"><span style="font-weight:600">Total</span><span style="font-weight:700">${peso(ped.total)}</span></div></div>` : "";
   const paso = (n, t) => `<div class="fila sm" style="justify-content:flex-start;gap:10px;margin-top:8px"><span class="mini">${n}</span><span>${t}</span></div>`;
   const siguientes = (como === "pagado" ? [] : ["Revisamos tu transferencia y te confirmamos."])
-    .concat([`Te escribimos por WhatsApp para coordinar la hora${ped && !ped.fecha_entrega ? " (entrega dentro de 2 días hábiles)" : ""}.`,
+    .concat([ped && esOtraTxt(ped.comuna) ? "Te escribimos por WhatsApp para coordinar el envío a tu comuna y su costo." : `Te escribimos por WhatsApp para coordinar la hora${ped && !ped.fecha_entrega ? " (entrega dentro de 2 días hábiles)" : ""}.`,
              "Te avisamos por correo cuando tu pedido esté listo o vaya en camino."]);
   $("#cuerpo").innerHTML = indicador() + `
   <div class="card" style="margin-top:4px;text-align:center;padding:22px 16px">
@@ -575,7 +586,8 @@ function cargarDesdePedido(ped) {
     for (let i = hay; i < n; i++) st.cajas.push({ tam: c.navidad, neg: Math.ceil(c.navidad / 2), bla: Math.floor(c.navidad / 2), cajaId: c.id }); });
   st.nombre = st.nombre || ped.nombre || ""; st.correo = st.correo || ped.correo || "";
   if (!st.tel && ped.telefono) st.tel = String(ped.telefono).replace(/^569/, "").slice(-8);
-  st.entrega = ped.entrega === "despacho" ? "despacho" : "retiro"; st.comuna = ped.comuna || st.comuna;
+  st.entrega = ped.entrega === "despacho" ? "despacho" : "retiro";
+  if (esOtraTxt(ped.comuna)) { st.comuna = OTRA; st.otra = String(ped.comuna).replace(/\s*\(otra comuna\)/i, ""); } else st.comuna = ped.comuna || st.comuna;
   if (ped.direccion) st.direccion = String(ped.direccion).replace(/,?\s*\(⚠[^)]*\)/, "");
   if (st.cajas.length) st.fecha = ped.fecha_entrega || ""; else if (ped.fecha_entrega) { st.programar = true; st.fechaProg = ped.fecha_entrega; }
 }
@@ -599,7 +611,7 @@ function dibujarPaso3(ped, pago) {
   const filas = [["Nombre", pago.titular], ["RUT", rut(pago.rut)], ["Banco", pago.banco], ["Tipo de cuenta", pago.tipo], ["N° de cuenta", pago.numero], ["Correo", pago.correo]].filter((f) => f[1]);
   const desp = (ped.entrega || st.entrega) === "despacho";
   const comuna = ped.comuna || comunaElegida(), dir = ped.direccion || st.direccion;
-  const envio = Number(ped.envio || 0), coordinar = false;
+  const envio = Number(ped.envio || 0), coordinar = esOtraTxt(ped.comuna);
   // En el celular se usa wa.me. En computador, wa.me abre la app de escritorio y esta pierde los emojis ("U+FFFD"),
   // así que se abre WhatsApp Web directamente, que sí los respeta.
   const movil = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent), e = (x) => x + " ";
@@ -653,7 +665,7 @@ function dibujarPaso3(ped, pago) {
   ${elegido ? `<div class="card" style="margin-top:12px"><div class="fila" style="justify-content:flex-start"><span class="mini">${elegido === "mp" ? 2 : 3}</span><b style="font-size:16px">Coordinamos la entrega</b></div>
     ${ped.fecha_entrega ? `<div class="sm" style="margin-top:6px">📅 <b>${fechaLarga(ped.fecha_entrega)}</b></div>` : ""}
     ${desp ? `<div class="sm" style="margin-top:4px">🚗 A domicilio: ${esc(dir)}, ${esc(comuna)}</div>` : ""}
-    <div class="mut sm" style="margin-top:4px">Apenas ${elegido === "mp" ? "se confirme tu pago" : "recibamos tu comprobante"}, <b>te escribimos por WhatsApp</b> para coordinar la hora de la entrega${ped.fecha_entrega ? "" : " (dentro de 2 días hábiles)"}.</div></div>` : ""}
+    <div class="mut sm" style="margin-top:4px">Apenas ${elegido === "mp" ? "se confirme tu pago" : "recibamos tu comprobante"}, <b>te escribimos por WhatsApp</b> para coordinar ${coordinar ? "el envío a tu comuna, su costo y la hora" : "la hora de la entrega"}${ped.fecha_entrega ? "" : " (dentro de 2 días hábiles)"}.</div></div>` : ""}
   ${c.whatsapp ? `<a class="btn out" style="margin-top:12px" target="_blank" rel="noopener" href="https://wa.me/${waNum(c.whatsapp)}?text=${encodeURIComponent("Hola! Tengo una consulta sobre mi pedido de " + frase(ped.lineas) + ".")}">💬 Tengo una consulta</a>` : ""}
   <p class="mut sm" style="text-align:center">${st.compOk ? "Puedes cerrar esta página." : "Si necesitas cerrar esta página, en tu correo tienes el botón para volver a pagar."} ¡Gracias por apoyar a Alfajores Vicencio! 🤎</p>`;
   document.querySelectorAll('input[name="medio"]').forEach((r) => r.onchange = () => { st.medio = r.value; dibujarPaso3(ped, pago); });
@@ -753,9 +765,9 @@ function barra() {
   if (f1 && st.paso === 1) {
     const r = st.cat.despacho || {}, min = Number(r.minimo || 0), falta = Math.max(0, min - t);
     f1.hidden = !(despachoActivo() && min > 0 && Number(r.costo || 0) > 0);
-    f1.innerHTML = t <= 0 ? `🚗 Envío gratis a tu domicilio en ${esc(listaComunas(r.comunas))} desde <b>${peso(min)}</b>`
+    f1.innerHTML = st.codigo ? `🎉 Con tu código tienes <b>envío gratis</b> a tu domicilio` : t <= 0 ? `🚗 Envío gratis a tu domicilio en ${esc(listaComunas(r.comunas))} desde <b>${peso(min)}</b>`
       : falta > 0 ? `🚗 Te faltan <b>${peso(falta)}</b> para envío gratis a tu domicilio` : `🎉 ¡Tienes <b>envío gratis</b> a tu domicilio en ${esc(listaComunas(r.comunas))}!`;
-    f1.innerHTML += `<div class="prog"><i style="width:${Math.min(100, Math.round(t * 100 / (min || 1)))}%"></i></div>`;
+    if (!st.codigo) f1.innerHTML += `<div class="prog"><i style="width:${Math.min(100, Math.round(t * 100 / (min || 1)))}%"></i></div>`;
   }
   $("#atras").hidden = (st.paso !== 2 && st.paso !== 3) || (st.paso === 3 && (st.avisoMp === "pending" || st.avisoMp === "in_process"));
   $("#atras").textContent = st.paso === 3 ? "← Envío" : "← Carrito";
@@ -855,7 +867,8 @@ async function enviar() {
     if (!st.fecha) { avisar("Elige el día de entrega."); return; }
   }
   if (st.entrega === "despacho" && despachoActivo()) {
-    if (!comunaElegida()) { avisar("Elige tu comuna para el despacho."); return; }
+    if (!st.comuna) { avisar("Elige tu comuna para el despacho."); return; }
+    if (esOtra() && (st.otra || "").trim().length < 3) { avisar("Escribe en qué comuna estás."); const o = $("#otra"); if (o) o.focus(); return; }
     if ((st.direccion || "").trim().length < 5) { avisar("Escribe tu dirección para el despacho."); return; }
     if (st.cat.maps_key && window.google && window.google.maps && !st.dirValida) { avisar("Elige tu dirección de la lista de Google Maps."); return; }
     if (!st.cat.maps_key) {
@@ -873,7 +886,7 @@ async function enviar() {
       body: JSON.stringify({ accion: "pedido", ref: st.ref, nombre: st.nombre, telefono: tel, correo: (st.correo || "").trim(), nota: st.cajas.length ? "#C " + st.cajas.map((k) => `${k.cajaId}=${negroId()}:${k.neg},${blancoId()}:${k.bla}`).join(";") : "", cantidades: st.cant,
         esperado: (st.totalEsperado = totales()[0] + (envioActual() || 0)),
         fecha_entrega: agendaActiva() ? st.fecha : (st.programar ? st.fechaProg : ""), codigo: st.codigo || "",
-        entrega: despachoActivo() ? st.entrega : "retiro", comuna: comunaElegida(), direccion: [st.direccion || "", (st.depto || "").trim(), st.dirForzada ? "(⚠ dirección no encontrada en el mapa)" : ""].filter(Boolean).join(", "), trampa: ($("#trampa") || {}).value || "" }) });
+        entrega: despachoActivo() ? st.entrega : "retiro", comuna: comunaElegida(), otra_comuna: esOtra(), direccion: [st.direccion || "", (st.depto || "").trim(), st.dirForzada ? "(⚠ dirección no encontrada en el mapa)" : ""].filter(Boolean).join(", "), trampa: ($("#trampa") || {}).value || "" }) });
     const d = await r.json();
     st.enviando = false;
     if (!d.ok) {
@@ -887,7 +900,7 @@ async function enviar() {
       }
       return;
     }
-    try { localStorage.setItem("av_cliente", JSON.stringify({ nombre: st.nombre, tel: st.tel, correo: st.correo, comuna: st.comuna, direccion: st.dirForzada ? "" : st.direccion, depto: st.depto })); } catch (e) {}   // la próxima vez se rellena solo
+    try { localStorage.setItem("av_cliente", JSON.stringify({ nombre: st.nombre, tel: st.tel, correo: st.correo, comuna: st.comuna, otra: st.otra, direccion: st.dirForzada ? "" : st.direccion, depto: st.depto })); } catch (e) {}   // la próxima vez se rellena solo
     history.pushState({ paso: 3 }, "");
     st.paso = 3; st.avisoMp = ""; window.scrollTo(0, 0); barra(); dibujarPaso3(d.pedido, d.pago || {});
   } catch (e) {
@@ -1011,7 +1024,7 @@ async function iniciar() {
       return;
     }
     sub.textContent = ""; sub.hidden = true;
-    try { const g = JSON.parse(localStorage.getItem("av_cliente") || "null"); if (g) ["nombre", "tel", "correo", "comuna", "direccion", "depto"].forEach((k) => { if (g[k] && !st[k]) st[k] = g[k]; }); } catch (e) {}
+    try { const g = JSON.parse(localStorage.getItem("av_cliente") || "null"); if (g) ["nombre", "tel", "correo", "comuna", "otra", "direccion", "depto"].forEach((k) => { if (g[k] && !st[k]) st[k] = g[k]; }); } catch (e) {}
     if (ses && ses.paso === 2 && totales()[1] > 0) { history.replaceState({ paso: 1 }, ""); irA(2); } else irA(1);
     const pend = leerPendiente();
     if (pend) {   // volvió atrás desde Mercado Pago o cerró la página: se ofrece retomar el pago

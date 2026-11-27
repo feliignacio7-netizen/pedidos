@@ -151,11 +151,13 @@ function crearPedido(d) {
     if (unidades > 200) return json({ ok: false, error: "Para pedidos tan grandes, escríbenos por WhatsApp." });
     const despacho = d.entrega === "despacho" && (c.despacho || {}).activo;
     const entrega = despacho ? "despacho" : "retiro";
-    const comuna = despacho ? String(d.comuna || "").replace(/\s+/g, " ").trim().substring(0, 40) : "";
+    const otraComuna = despacho && d.otra_comuna === true;   // comuna fuera de la zona: el envío se coordina por WhatsApp
+    let comuna = despacho ? String(d.comuna || "").replace(/\s+/g, " ").replace(/\(otra comuna\)/gi, "").trim().substring(0, 40) : "";
     const direccion = despacho ? String(d.direccion || "").replace(/\s+/g, " ").trim().substring(0, 120) : "";
     if (despacho && (!comuna || direccion.length < 5)) return json({ ok: false, error: "Escribe tu comuna y dirección para el despacho." });
-    if (despacho && (c.despacho.comunas || []).indexOf(comuna) < 0) return json({ ok: false, error: "Por ahora solo entregamos a domicilio en " + (c.despacho.comunas || []).join(", ") + ". Si estás en otra comuna, escríbenos por WhatsApp." });
-    const envio = calcularEnvio(c, total, entrega, comuna);
+    if (otraComuna) { if (comuna.length < 3) return json({ ok: false, error: "Escribe en qué comuna estás." }); comuna += " (otra comuna)"; }
+    else if (despacho && (c.despacho.comunas || []).indexOf(comuna) < 0) return json({ ok: false, error: "Por ahora solo entregamos a domicilio en " + (c.despacho.comunas || []).join(", ") + ". Si estás en otra comuna, elige «Otra comuna» y coordinamos el envío por WhatsApp." });
+    const envio = (amigo || otraComuna) ? 0 : calcularEnvio(c, total, entrega, comuna);   // con código: gratis; otra comuna: se cobra aparte por WhatsApp
     const creado = Utilities.formatDate(new Date(), "America/Santiago", "yyyy-MM-dd HH:mm");
     h.appendRow([ref, "'" + creado, nombre, "'" + tel, notaFinal, JSON.stringify(lineas), total + envio, "", entrega, comuna, direccion, envio, correo, "", "", "", fechaEntrega ? "'" + fechaEntrega : "", ""]);
     enviarCorreo(h, 0, "recibido");   // 0 = la fila recién agregada
@@ -597,7 +599,7 @@ function cuerpoCorreo(f, I, tipo) {
 <p style="margin:0 0 4px;color:#6B4A35">Hola ${escH(String(f[I.nombre]).split(" ")[0])}, pedido <b>#${cod}</b></p>
 <p style="line-height:1.5">${t.texto}</p>
 <table style="width:100%;border-collapse:collapse;font-size:14px;margin-top:12px">${filas}
-${envio ? `<tr><td style="padding:4px 0">Envío</td><td style="padding:4px 0;text-align:right">${pesos(envio)}</td></tr>` : ""}
+${envio ? `<tr><td style="padding:4px 0">Envío</td><td style="padding:4px 0;text-align:right">${pesos(envio)}</td></tr>` : /\(otra comuna\)/i.test(String(f[I.comuna])) ? `<tr><td style="padding:4px 0">Envío</td><td style="padding:4px 0;text-align:right">por coordinar por WhatsApp</td></tr>` : ""}
 <tr><td style="padding:8px 0;border-top:1px solid #E6DDD2"><b>Total</b></td><td style="padding:8px 0;border-top:1px solid #E6DDD2;text-align:right"><b>${pesos(f[I.total])}</b></td></tr></table>
 <p style="font-size:14px;margin:14px 0 0">${dia ? "📅 Entrega el <b>" + dia + "</b><br>" : ""}${entrega}</p>${boton}
 <p style="font-size:12px;color:#8a7a6c;margin-top:24px;text-align:center">Alfajores Vicencio · <a href="${PAGINA}" style="color:#8a7a6c">alfajoresvicencio.cl</a> · @alfajores_vicencio</p>
