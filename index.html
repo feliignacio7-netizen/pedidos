@@ -184,6 +184,7 @@ function lugarPedido(ped) {
 }
 const costoOtras = () => Number(((st.cat || {}).despacho || {}).costo_otras ?? 5000);
 const minimoOtras = () => Number(((st.cat || {}).despacho || {}).minimo_otras ?? 15000);
+const gratisOtras = () => Number(((st.cat || {}).despacho || {}).gratis_otras ?? 35000);   // otras comunas: envío gratis desde
 const minimoPedido = () => Number(((st.cat || {}).despacho || {}).minimo_pedido ?? 5000);   // mínimo para envío en tus comunas
 // Cómo se entrega: en la zona, a domicilio; en otra comuna, retiro gratis en Las Condes o envío con mínimo (con código: punto a coordinar).
 // En tus comunas, un pedido bajo el mínimo puede retirarse gratis en Las Condes.
@@ -191,7 +192,7 @@ const bajoMinimoZona = () => !esOtra() && totales()[0] < minimoPedido();
 function modoEntrega() { if (!despachoActivo()) return "retiro"; if (!esOtra()) return st.retiroZona && bajoMinimoZona() ? "retiro" : "despacho"; return st.codigo ? "retiro" : (st.modoOtra || ""); }
 function envioActual() {   // misma regla que el servidor
   if (!despachoActivo() || modoEntrega() === "retiro") return 0;   // retiro: gratis
-  if (esOtra()) return modoEntrega() === "despacho" ? costoOtras() : 0;   // otra comuna: tarifa fija o retiro gratis
+  if (esOtra()) return modoEntrega() === "despacho" && !(gratisOtras() && totales()[0] >= gratisOtras()) ? costoOtras() : 0;   // otra comuna: tarifa fija (gratis desde el umbral) o retiro gratis
   if (st.codigo) return 0;     // con código: envío gratis
   const r = st.cat.despacho, sub = totales()[0];
   return sub >= Number(r.minimo || 0) ? 0 : Number(r.costo || 0);
@@ -398,7 +399,7 @@ function dibujarPaso2() {
         <label class="opc ${st.modoOtra === "retiro" ? "sel" : ""}" id="mo_retiro"><input type="radio" name="modo" value="retiro" ${st.modoOtra === "retiro" ? "checked" : ""}>
           <div style="flex:1"><div class="fila"><b style="font-weight:600">📍 Retiro en Las Condes</b><span class="gratis">Gratis</span></div><div class="mut sm">En un punto a coordinar por WhatsApp.</div></div></label>
         <label class="opc ${st.modoOtra === "despacho" ? "sel" : ""}" id="mo_despacho"><input type="radio" name="modo" value="despacho" ${st.modoOtra === "despacho" ? "checked" : ""}>
-          <div style="flex:1"><div class="fila"><b style="font-weight:600">🚗 Envío a domicilio</b><span>${peso(costoOtras())}</span></div><div class="mut sm">Pedido mínimo ${peso(minimoOtras())}. Coordinamos el día y la hora por WhatsApp.</div></div></label>`}` : ""}
+          <div style="flex:1"><div class="fila"><b style="font-weight:600">🚗 Envío a domicilio</b><span>${totales()[0] >= gratisOtras() && gratisOtras() ? '<span class="gratis">Gratis</span>' : peso(costoOtras())}</span></div><div class="mut sm">Pedido mínimo ${peso(minimoOtras())}${gratisOtras() ? ` · gratis desde ${peso(gratisOtras())}` : ""}. Coordinamos el día y la hora por WhatsApp.</div></div></label>`}` : ""}
       ${st.comuna && bajoMinimoZona() ? `<div class="mut sm" style="margin-top:10px">Tu pedido es menor a <b>${peso(minimoPedido())}</b>, el mínimo para envío. ¿Cómo lo quieres recibir?</div>
         <label class="opc ${st.retiroZona ? "sel" : ""}" id="mz_retiro"><input type="radio" name="modoz" value="retiro" ${st.retiroZona ? "checked" : ""}>
           <div style="flex:1"><div class="fila"><b style="font-weight:600">📍 Retiro en Las Condes</b><span class="gratis">Gratis</span></div><div class="mut sm">En un punto a coordinar por WhatsApp. Sin mínimo.</div></div></label>
@@ -422,7 +423,9 @@ function dibujarPaso2() {
       if (m) {
         if (esOtra()) {
           const falta = minimoOtras() - sub;
-          m.innerHTML = !st.codigo && st.modoOtra === "despacho" && falta > 0 ? `<div class="sm">Te faltan <b>${peso(falta)}</b> para el pedido mínimo de envío a otras comunas. <a href="#" id="sumar" style="color:var(--pri-t);font-weight:600">+ Agregar alfajores</a> o elige retiro gratis.</div>` : "";
+          const fg = gratisOtras() - sub;
+          if (!st.codigo && st.modoOtra === "despacho" && falta <= 0) { m.innerHTML = gratisOtras() && fg > 0 ? `<div class="sm">Te faltan <b>${peso(fg)}</b> para envío gratis (desde ${peso(gratisOtras())}). <a href="#" id="sumar" style="color:var(--pri-t);font-weight:600">+ Agregar alfajores</a></div>` : gratisOtras() ? `<div class="sm" style="color:var(--ok);font-weight:600">🎉 ¡Tu envío es gratis!</div>` : ""; }
+          else m.innerHTML = !st.codigo && st.modoOtra === "despacho" && falta > 0 ? `<div class="sm">Te faltan <b>${peso(falta)}</b> para el pedido mínimo de envío a otras comunas. <a href="#" id="sumar" style="color:var(--pri-t);font-weight:600">+ Agregar alfajores</a> o elige retiro gratis.</div>` : "";
         }
         else if (modoEntrega() === "retiro") m.innerHTML = "";
         else if (st.comuna && sub < minimoPedido()) m.innerHTML = `<div class="sm">El pedido mínimo para envío es <b>${peso(minimoPedido())}</b>: te faltan <b>${peso(minimoPedido() - sub)}</b>. <a href="#" id="sumar" style="color:var(--pri-t);font-weight:600">+ Agregar alfajores</a></div>`;
